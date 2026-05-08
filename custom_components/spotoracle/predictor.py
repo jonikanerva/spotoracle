@@ -121,14 +121,15 @@ def predict_series(residual_dict, a, b):
     return {h: a * r + b for h, r in residual_dict.items()}
 
 
-def merge_actual_and_predicted(actual, predicted, horizon_hours, now=None):
-    """Build a quarter-by-quarter list for [now, now + horizon_hours)."""
-    if now is None:
-        now = datetime.now(timezone.utc)
-    start = _quarter_floor(now)
+def merge_actual_and_predicted(actual, predicted, series_start, num_quarters):
+    """Build a quarter-by-quarter list for [series_start, series_start + num_quarters * 15min).
+
+    series_start is normally aligned to the start of the local day so the chart
+    can render the full current day even before the current moment.
+    """
     out = []
-    for i in range(horizon_hours * 4):
-        ts = start + timedelta(minutes=15 * i)
+    for i in range(num_quarters):
+        ts = series_start + timedelta(minutes=15 * i)
         key = ts.isoformat()
         if key in actual:
             out.append({"start": key, "price": round(actual[key], 3), "source": "day_ahead"})
@@ -147,14 +148,24 @@ def build_forecast(
     default_intercept,
     min_fit_samples,
     now=None,
+    series_start=None,
 ):
     """Run the full pipeline at 15-min resolution.
+
+    series_start defaults to `_quarter_floor(now)`. Pass an earlier instant
+    (e.g. local midnight in UTC) to make the output series cover the full
+    current day; the past quarters are filled from the source price sensor's
+    actual day-ahead values.
 
     consumption_actual_records are hourly (Fingrid dataset 124); they are
     expanded to 4 quarter-keys per hour before extending the forecast.
     """
     if now is None:
         now = datetime.now(timezone.utc)
+    if series_start is None:
+        series_start = _quarter_floor(now)
+    else:
+        series_start = _quarter_floor(series_start)
 
     actual_prices = parse_price_sensor_attributes(nordpool_prices)
     wind_q = bucket_records(wind_records)
@@ -179,8 +190,10 @@ def build_forecast(
         a, b, used_default = default_slope, default_intercept, True
 
     predicted = predict_series(residual, a, b)
+
+    num_quarters = max(0, int((horizon_end - series_start).total_seconds() // 900))
     series = merge_actual_and_predicted(
-        actual_prices, predicted, horizon_hours, now=now
+        actual_prices, predicted, series_start, num_quarters
     )
     return {
         "series": series,

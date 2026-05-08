@@ -52,7 +52,7 @@ Regressio sovittaa kertoimet suoraan lähdesensorin arvoja vasten, joten ennuste
 
 | Attribuutti | Merkitys |
 |---|---|
-| `forecast` | Lista `{start, price, source}` 0–72h **15 min resoluutiolla** (288 entryä). Käytä ApexChartsin `data_generator`:n syötteenä. |
+| `forecast` | Lista `{start, price, source}` **15 min resoluutiolla** kuluvan päivän alusta (paikallisaika 00:00) → +72h nykyhetkestä eteenpäin. Tyypillinen pituus 300–380 entryä. Käytä ApexChartsin `data_generator`:n syötteenä. |
 | `source` | Nykyhetken (15 min) lähde: `day_ahead` tai `predicted`. |
 | `slope`, `intercept` | Regression kertoimet `price = slope · residual + intercept`. |
 | `fit_samples` | Montako overlap-quarteria (15 min entryä) regressioon mukaan. |
@@ -78,57 +78,85 @@ Tarkista `consumption_extended_quarters`-attribuutti nähdäksesi montako 15 min
 
 ## ApexCharts-kortti
 
-Vaatii [`apexcharts-card`](https://github.com/RomRider/apexcharts-card) -kortin asennuksen HACSista (Frontend-kategoria). Esimerkki käyttää **stepline**-käyrää, joka on oikea visualisointi 15 min MTU-hinnoille (askelmainen, kuten Sähkövatkaimessa):
+Vaatii [`apexcharts-card`](https://github.com/RomRider/apexcharts-card) -kortin asennuksen HACSista (Frontend-kategoria).
+
+Esimerkki kattaa kaikki olennaiset ominaisuudet:
+
+- **Kuluvan päivän alusta** + 3 päivää eteenpäin (`span.start: day`, `graph_span: 4d`)
+- **Stepline**-käyrä (oikea 15 min MTU-hinnoille)
+- **Värikoodaus hintatason mukaan** (`color_threshold`): vihreä < 15 snt/kWh, keltainen 15–30, punainen ≥ 30
+- **Day-ahead vs. ennuste** erottuu tyylillä: julkaistut hinnat täytettynä alueena, ennuste katkoviivana
+- **"Nyt"-merkki** vertikaaliviivana
 
 ```yaml
 type: custom:apexcharts-card
-graph_span: 72h
-span:
-  start: hour
 header:
   show: true
-  title: Sähkönhinta 0–72h (FI, 15 min)
-  show_states: true
+  title: Sähkönhinta (FI, 15 min)
+  show_states: false
+graph_span: 4d
+span:
+  start: day
+now:
+  show: true
+  color: '#ff5252'
+  label: Nyt
 apex_config:
   legend:
     show: true
+    position: top
   tooltip:
     x:
       format: 'ddd HH:mm'
+  grid:
+    borderColor: '#404040'
 yaxis:
   - id: price
     decimals: 2
     apex_config:
+      forceNiceScale: true
       title:
         text: snt/kWh
 series:
   - entity: sensor.spotoracle_forecast
-    name: Hinta
-    yaxis_id: price
-    type: line
-    curve: stepline
-    stroke_width: 2
-    color: '#1e88e5'
-    data_generator: |
-      return entity.attributes.forecast.map(p => [
-        new Date(p.start).getTime(),
-        p.price
-      ]);
-  - entity: sensor.spotoracle_forecast
-    name: Day-ahead (julkaistu)
+    name: Day-ahead
     yaxis_id: price
     type: area
     curve: stepline
-    stroke_width: 0
-    opacity: 0.18
-    color: '#1e88e5'
+    stroke_width: 2
+    opacity: 0.4
+    color_threshold:
+      - value: 0
+        color: '#43a047'   # vihreä — halpa
+      - value: 15
+        color: '#fbc02d'   # keltainen — keskitaso
+      - value: 30
+        color: '#e53935'   # punainen — kallis
     data_generator: |
       return entity.attributes.forecast
         .filter(p => p.source === 'day_ahead')
         .map(p => [new Date(p.start).getTime(), p.price]);
+  - entity: sensor.spotoracle_forecast
+    name: Ennuste
+    yaxis_id: price
+    type: line
+    curve: stepline
+    stroke_width: 2
+    stroke_dash: 6
+    color_threshold:
+      - value: 0
+        color: '#43a047'
+      - value: 15
+        color: '#fbc02d'
+      - value: 30
+        color: '#e53935'
+    data_generator: |
+      return entity.attributes.forecast
+        .filter(p => p.source === 'predicted')
+        .map(p => [new Date(p.start).getTime(), p.price]);
 ```
 
-Stepline-kaavion sininen viiva ulottuu yli koko 72h ja taustalla oleva pehmeä alue korostaa, missä julkaistut Nord Pool -hinnat päättyvät ja heuristinen ennuste alkaa.
+Kortti näyttää **kuluvan päivän aamuyön → 3 päivää eteenpäin**: julkaistut Nord Pool -hinnat täytettynä porrasalueena (kiinteä), ja ennuste katkoviivana siitä eteenpäin. Värit kertovat hinnan tason yhdellä silmäyksellä, ja punainen "Nyt"-viiva osoittaa missä mennään juuri nyt.
 
 ## Miten ennuste lasketaan
 

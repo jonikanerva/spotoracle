@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_API_KEY,
@@ -90,6 +91,13 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         start = now - timedelta(days=HISTORY_DAYS)   # 7 päivää historiaa + 1 päivä bufferia
         end = now + timedelta(hours=FORECAST_HOURS)
 
+        # Local midnight (in HA's configured time zone), expressed in UTC.
+        # The output series starts here so the dashboard can render today
+        # from 00:00 onwards, including hours already passed.
+        local_now = dt_util.now()
+        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        series_start_utc = local_midnight.astimezone(timezone.utc)
+
         datasets = await self._fetch_datasets(
             [
                 DATASET_WIND_FORECAST_15MIN,
@@ -114,6 +122,7 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
             default_intercept=DEFAULT_INTERCEPT,
             min_fit_samples=MIN_FIT_SAMPLES,
             now=now,
+            series_start=series_start_utc,
         )
         _LOGGER.debug(
             "Fit: a=%.5f b=%.3f samples=%d default=%s extended_q=%d",
