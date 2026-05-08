@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CONF_API_KEY,
     CONF_PRICE_SENSOR,
+    DATASET_CONSUMPTION_ACTUAL,
     DATASET_CONSUMPTION_FORECAST,
     DATASET_WIND_FORECAST_15MIN,
     DEFAULT_INTERCEPT,
@@ -21,6 +22,7 @@ from .const import (
     DOMAIN,
     FINGRID_API_BASE,
     FORECAST_HOURS,
+    HISTORY_DAYS,
     MIN_FIT_SAMPLES,
     UPDATE_INTERVAL,
 )
@@ -85,32 +87,40 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-        start = now - timedelta(hours=24)
+        start = now - timedelta(days=HISTORY_DAYS)   # 7 päivää historiaa + 1 päivä bufferia
         end = now + timedelta(hours=FORECAST_HOURS)
 
         datasets = await self._fetch_datasets(
-            [DATASET_WIND_FORECAST_15MIN, DATASET_CONSUMPTION_FORECAST],
+            [
+                DATASET_WIND_FORECAST_15MIN,
+                DATASET_CONSUMPTION_FORECAST,
+                DATASET_CONSUMPTION_ACTUAL,
+            ],
             start,
             end,
         )
         wind = datasets[DATASET_WIND_FORECAST_15MIN]
-        cons = datasets[DATASET_CONSUMPTION_FORECAST]
+        cons_forecast = datasets[DATASET_CONSUMPTION_FORECAST]
+        cons_actual = datasets[DATASET_CONSUMPTION_ACTUAL]
         nordpool = self._read_price_sensor()
 
         result = build_forecast(
             nordpool_prices=nordpool,
             wind_records=wind,
-            consumption_records=cons,
+            consumption_forecast_records=cons_forecast,
+            consumption_actual_records=cons_actual,
             horizon_hours=FORECAST_HOURS,
             default_slope=DEFAULT_SLOPE,
             default_intercept=DEFAULT_INTERCEPT,
             min_fit_samples=MIN_FIT_SAMPLES,
+            now=now,
         )
         _LOGGER.debug(
-            "Fit: a=%.5f b=%.3f samples=%d default=%s",
+            "Fit: a=%.5f b=%.3f samples=%d default=%s extended=%d",
             result["slope"],
             result["intercept"],
             result["fit_samples"],
             result["fit_used_default"],
+            result["consumption_extended_hours"],
         )
         return result

@@ -51,7 +51,20 @@ Regressio sovittaa kertoimet suoraan lähdesensorin arvoja vasten, joten ennuste
 | `slope`, `intercept` | Regression kertoimet `price = slope · residual + intercept`. |
 | `fit_samples` | Montako overlap-tuntia regressioon mukaan. |
 | `fit_used_default` | `true` jos overlap < 6h ja palaudutaan oletuskertoimiin. |
+| `consumption_extended_hours` | Montako tuntia kulutusennustetta ekstrapoloitiin viime viikon datalla (0 jos ei tarvittu). |
 | `generated_at` | UTC-aikaleima ennusteen tuottohetkestä. |
+
+## Tekniset huomiot
+
+### 15 min spot-hinnat
+
+Nord Pool siirtyi 15 minuutin hinta-aikajaksoihin (MTU) vuonna 2025. Lähde-hintasensorisi `prices`-attribuutti voi sisältää joko tunneittaisia tai 15 minuutin entryjä. Integraatio aggregoi 15 min hinnat tunneiksi keskiarvona ennen regression sovitusta — eli oikea käsittely riippumatta lähteen resoluutiosta. Ennusteen oma resoluutio on tunneittainen, mikä sopii ApexChartsin tuntipalkkeihin.
+
+### 72h horisontti
+
+Fingridin tuulivoimaennuste (dataset 245) ulottuu 72h, mutta kulutusennuste (165) vain ~24h. Jotta saadaan täydet 72h, integraatio ekstrapoloi puuttuvat kulutustunnit **viime viikon TOTEUTUNEILLA arvoilla** samalta viikonpäivä-tunti-parilta (dataset 124). Suomen sähkönkulutus seuraa selkeää viikkorytmiä, joten tämä on käytännössä riittävän tarkka.
+
+Tarkista `consumption_extended_hours`-attribuutti nähdäksesi montako tuntia ekstrapoloitiin. Kun arvo on 0, koko sarja on Fingridin oman ennusteen pohjalta.
 
 ## ApexCharts-kortti
 

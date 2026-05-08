@@ -60,6 +60,7 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
             "intercept": round(d.get("intercept", 0.0), 3),
             "fit_samples": d.get("fit_samples", 0),
             "fit_used_default": d.get("fit_used_default", True),
+            "consumption_extended_hours": d.get("consumption_extended_hours", 0),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         if self._series:

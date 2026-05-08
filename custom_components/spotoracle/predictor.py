@@ -34,13 +34,41 @@ def aggregate_15min_to_hourly(records: Iterable[dict]) -> dict[str, float]:
 
 
 def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
-    out: dict[str, float] = {}
+    """Aggregate price entries (possibly 15-min) to hourly mean.
+
+    Nord Pool moved to 15-minute MTU pricing in 2025; sensors may expose
+    either hourly or 15-min entries. Bucketing by hour and taking the mean
+    gives the right hourly value in both cases.
+    """
+    buckets: dict[str, list[float]] = {}
     for p in prices:
         start = p.get("start") or p.get("startTime")
         price = p.get("price") or p.get("value")
         if start is None or price is None:
             continue
-        out[_hour_key(_parse_iso(start))] = float(price)
+        buckets.setdefault(_hour_key(_parse_iso(start)), []).append(float(price))
+    return {k: sum(vs) / len(vs) for k, vs in buckets.items() if vs}
+
+
+def extend_consumption_with_last_week(
+    cons_forecast: dict[str, float],
+    cons_actual: dict[str, float],
+    horizon_end: datetime,
+) -> dict[str, float]:
+    """Fill missing hours after the forecast ends with same-weekday-same-hour
+    values from one week ago. Returns a new dict (does not mutate input).
+    """
+    out = dict(cons_forecast)
+    if not cons_forecast:
+        return out
+    last_known = _parse_iso(max(cons_forecast))
+    cursor = last_known + timedelta(hours=1)
+    while cursor < horizon_end:
+        prev_week = cursor - timedelta(days=7)
+        prev_key = _hour_key(prev_week)
+        if prev_key in cons_actual:
+            out[_hour_key(cursor)] = cons_actual[prev_key]
+        cursor += timedelta(hours=1)
     return out
 
 
@@ -84,14 +112,38 @@ def merge_actual_and_predicted(actual, predicted, horizon_hours, now=None):
     return out
 
 
-def build_forecast(nordpool_prices, wind_records, consumption_records,
-                   horizon_hours, default_slope, default_intercept, min_fit_samples):
-    actual = parse_price_sensor_attributes(nordpool_prices)
-    wind_h = aggregate_15min_to_hourly(wind_records)
-    cons_h = aggregate_15min_to_hourly(consumption_records)
-    residual = {h: cons_h[h] - wind_h.get(h, 0.0) for h in cons_h}
+def build_forecast(
+    nordpool_prices,
+    wind_records,
+    consumption_forecast_records,
+    consumption_actual_records,
+    horizon_hours,
+    default_slope,
+    default_intercept,
+    min_fit_samples,
+    now=None,
+):
+    """Run the full pipeline.
 
-    xs, ys = align_series(actual, residual)
+    consumption_actual_records is used to extend the forecast horizon by
+    copying same-weekday-same-hour values from the past week.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    actual_prices = parse_price_sensor_attributes(nordpool_prices)
+    wind_h = aggregate_15min_to_hourly(wind_records)
+    cons_h = aggregate_15min_to_hourly(consumption_forecast_records)
+    cons_actual_h = aggregate_15min_to_hourly(consumption_actual_records)
+
+    horizon_end = _floor_to_hour(now) + timedelta(hours=horizon_hours)
+    cons_h_extended = extend_consumption_with_last_week(
+        cons_h, cons_actual_h, horizon_end
+    )
+
+    residual = {h: cons_h_extended[h] - wind_h.get(h, 0.0) for h in cons_h_extended}
+
+    xs, ys = align_series(actual_prices, residual)
     used_default = False
     if len(xs) >= min_fit_samples:
         try:
@@ -102,11 +154,14 @@ def build_forecast(nordpool_prices, wind_records, consumption_records,
         a, b, used_default = default_slope, default_intercept, True
 
     predicted = predict_series(residual, a, b)
-    series = merge_actual_and_predicted(actual, predicted, horizon_hours)
+    series = merge_actual_and_predicted(
+        actual_prices, predicted, horizon_hours, now=now
+    )
     return {
         "series": series,
         "slope": a,
         "intercept": b,
         "fit_samples": len(xs),
         "fit_used_default": used_default,
+        "consumption_extended_hours": len(cons_h_extended) - len(cons_h),
     }
