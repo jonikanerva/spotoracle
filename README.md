@@ -12,8 +12,8 @@ Tarvitset olemassa olevan HA-sensorin, jonka attribuutti `prices` on lista 15 mi
 
 ```yaml
 prices:
-  - start: "2026-05-08T00:00:00+03:00"   # ISO8601 (paikallinen tai UTC), 15 min stepit
-    price: 4.21                           # snt/kWh
+  - start: "2026-05-08T00:00:00+03:00" # ISO8601 (paikallinen tai UTC), 15 min stepit
+    price: 4.21 # snt/kWh
   - start: "2026-05-08T00:15:00+03:00"
     price: 4.05
   - start: "2026-05-08T00:30:00+03:00"
@@ -50,15 +50,15 @@ Regressio sovittaa kertoimet suoraan lähdesensorin arvoja vasten, joten ennuste
 
 ## Sensorin attribuutit
 
-| Attribuutti | Merkitys |
-|---|---|
-| `forecast` | Lista `{start, price, source}` **15 min resoluutiolla** kuluvan päivän alusta (paikallisaika 00:00) → +72h nykyhetkestä eteenpäin. Tyypillinen pituus 300–380 entryä. Käytä ApexChartsin `data_generator`:n syötteenä. |
-| `source` | Nykyhetken (15 min) lähde: `day_ahead` tai `predicted`. |
-| `slope`, `intercept` | Regression kertoimet `price = slope · residual + intercept`. |
-| `fit_samples` | Montako overlap-quarteria (15 min entryä) regressioon mukaan. |
-| `fit_used_default` | `true` jos overlap < 24 quarteria (= 6h) ja palaudutaan oletuskertoimiin. |
-| `consumption_extended_quarters` | Montako 15 min quarteria kulutusennustetta ekstrapoloitiin viime viikon datalla (0 jos ei tarvittu). |
-| `generated_at` | UTC-aikaleima ennusteen tuottohetkestä. |
+| Attribuutti                     | Merkitys                                                                                                                                                                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forecast`                      | Lista `{start, price, source}` **15 min resoluutiolla** kuluvan päivän alusta (paikallisaika 00:00) → +72h nykyhetkestä eteenpäin. Tyypillinen pituus 300–380 entryä. Käytä ApexChartsin `data_generator`:n syötteenä. |
+| `source`                        | Nykyhetken (15 min) lähde: `day_ahead` tai `predicted`.                                                                                                                                                                |
+| `slope`, `intercept`            | Regression kertoimet `price = slope · residual + intercept`.                                                                                                                                                           |
+| `fit_samples`                   | Montako overlap-quarteria (15 min entryä) regressioon mukaan.                                                                                                                                                          |
+| `fit_used_default`              | `true` jos overlap < 24 quarteria (= 6h) ja palaudutaan oletuskertoimiin.                                                                                                                                              |
+| `consumption_extended_quarters` | Montako 15 min quarteria kulutusennustetta ekstrapoloitiin viime viikon datalla (0 jos ei tarvittu).                                                                                                                   |
+| `generated_at`                  | UTC-aikaleima ennusteen tuottohetkestä.                                                                                                                                                                                |
 
 ## Tekniset huomiot
 
@@ -84,79 +84,80 @@ Esimerkki kattaa kaikki olennaiset ominaisuudet:
 
 - **Kuluvan päivän alusta** + 3 päivää eteenpäin (`span.start: day`, `graph_span: 4d`)
 - **Stepline**-käyrä (oikea 15 min MTU-hinnoille)
-- **Värikoodaus hintatason mukaan** (`color_threshold`): vihreä < 15 snt/kWh, keltainen 15–30, punainen ≥ 30
-- **Day-ahead vs. ennuste** erottuu tyylillä: julkaistut hinnat täytettynä alueena, ennuste katkoviivana
+- **Värikoodaus hintatason mukaan**: vihreä < 15 snt/kWh, keltainen 15–30, punainen ≥ 30
+- **Ennustealue** näkyy katkoviivana julkaistujen päältä
 - **"Nyt"-merkki** vertikaaliviivana
 
 ```yaml
 type: custom:apexcharts-card
-header:
-  show: true
-  title: Sähkönhinta (FI, 15 min)
-  show_states: false
+grid_options:
+  columns: full
 graph_span: 4d
 span:
   start: day
 now:
   show: true
-  color: '#ff5252'
-  label: Nyt
+  color: yellow
+  label: ▼
 apex_config:
   legend:
-    show: true
-    position: top
+    show: false
+  chart:
+    height: 250
+  xaxis:
+    type: datetime
+    labels:
+      datetimeUTC: false
+    crosshairs:
+      show: false
+    tooltip:
+      enabled: false
   tooltip:
     x:
-      format: 'ddd HH:mm'
-  grid:
-    borderColor: '#404040'
+      format: dd.MM.yyyy HH:mm
+  plotOptions:
+    bar:
+      columnWidth: 60%
+      colors:
+        ranges:
+          - from: -1000
+            to: 14.999
+            color: "#22c55e"
+          - from: 15
+            to: 29.999
+            color: "#f59e0b"
+          - from: 30
+            to: 10000
+            color: "#ef4444"
 yaxis:
   - id: price
-    decimals: 2
-    apex_config:
-      forceNiceScale: true
-      title:
-        text: snt/kWh
+    decimals: 0
 series:
   - entity: sensor.spotoracle_forecast
-    name: Day-ahead
     yaxis_id: price
-    type: area
-    curve: stepline
-    stroke_width: 2
-    opacity: 0.4
-    color_threshold:
-      - value: 0
-        color: '#43a047'   # vihreä — halpa
-      - value: 15
-        color: '#fbc02d'   # keltainen — keskitaso
-      - value: 30
-        color: '#e53935'   # punainen — kallis
+    type: column
+    name: Hinta
     data_generator: |
-      return entity.attributes.forecast
-        .filter(p => p.source === 'day_ahead')
-        .map(p => [new Date(p.start).getTime(), p.price]);
+      return entity.attributes.forecast.map(p => [
+        new Date(p.start).getTime(),
+        p.price
+      ]);
   - entity: sensor.spotoracle_forecast
-    name: Ennuste
     yaxis_id: price
     type: line
     curve: stepline
     stroke_width: 2
-    stroke_dash: 6
-    color_threshold:
-      - value: 0
-        color: '#43a047'
-      - value: 15
-        color: '#fbc02d'
-      - value: 30
-        color: '#e53935'
+    stroke_dash: 3
+    color: yellow
     data_generator: |
       return entity.attributes.forecast
         .filter(p => p.source === 'predicted')
         .map(p => [new Date(p.start).getTime(), p.price]);
 ```
 
-Kortti näyttää **kuluvan päivän aamuyön → 3 päivää eteenpäin**: julkaistut Nord Pool -hinnat täytettynä porrasalueena (kiinteä), ja ennuste katkoviivana siitä eteenpäin. Värit kertovat hinnan tason yhdellä silmäyksellä, ja punainen "Nyt"-viiva osoittaa missä mennään juuri nyt.
+Kortti näyttää **kuluvan päivän aamuyön → 3 päivää eteenpäin** värikoodattuina palkkeina. Vihreä = halpa, keltainen = keskitaso, punainen = kallis. Ennustealueen päällä näkyy keltainen katkoviiva osoittamassa, että ne hinnat ovat heuristisia ennusteita eivätkä julkaistuja Nord Pool -arvoja. Keltainen ▼-merkki osoittaa nykyhetken paikan akselilla.
+
+> Värit määritellään ApexCharts:n natiivilla `plotOptions.bar.colors.ranges` -ominaisuudella, ei apexcharts-card -wrapperin `color_threshold`:lla — tämä on luotettavin tapa saada erilliset värit per palkki, eikä se sulaudu gradientiksi 15 min datalla.
 
 ## Miten ennuste lasketaan
 
