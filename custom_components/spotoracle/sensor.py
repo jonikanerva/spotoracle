@@ -61,6 +61,7 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
             "fit_samples": d.get("fit_samples", 0),
             "fit_used_default": d.get("fit_used_default", True),
             "consumption_extended_quarters": d.get("consumption_extended_quarters", 0),
+            "wind_extended_quarters": d.get("wind_extended_quarters", 0),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         if self._series:

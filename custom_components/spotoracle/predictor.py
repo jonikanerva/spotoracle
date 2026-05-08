@@ -74,24 +74,27 @@ def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float
     return out
 
 
-def extend_consumption_with_last_week(
-    cons_forecast: dict[str, float],
-    cons_actual: dict[str, float],
+def extend_with_last_week(
+    forecast: dict[str, float],
+    actual: dict[str, float],
     horizon_end: datetime,
 ) -> dict[str, float]:
-    """Fill missing quarters after the forecast ends with values from the
-    same weekday/quarter one week ago.
+    """Fill missing quarters after `forecast` ends with values from the same
+    weekday/quarter one week ago, taken from `actual`. Returns a new dict.
+
+    Used for both consumption (Finnish weekly demand pattern is strong) and
+    wind power (rougher proxy, but acceptable for the last 6–24h tail).
     """
-    out = dict(cons_forecast)
-    if not cons_forecast:
+    out = dict(forecast)
+    if not forecast:
         return out
-    last_known = _parse_iso(max(cons_forecast))
+    last_known = _parse_iso(max(forecast))
     cursor = last_known + timedelta(minutes=15)
     while cursor < horizon_end:
         prev_week = cursor - timedelta(days=7)
         prev_key = _quarter_key(prev_week)
-        if prev_key in cons_actual:
-            out[_quarter_key(cursor)] = cons_actual[prev_key]
+        if prev_key in actual:
+            out[_quarter_key(cursor)] = actual[prev_key]
         cursor += timedelta(minutes=15)
     return out
 
@@ -132,7 +135,7 @@ def merge_actual_and_predicted(actual, predicted, series_start, num_quarters):
         ts = series_start + timedelta(minutes=15 * i)
         key = ts.isoformat()
         if key in actual:
-            out.append({"start": key, "price": round(actual[key], 3), "source": "day_ahead"})
+            out.append({"start": key, "price": round(actual[key], 3), "source": "nordpool"})
         elif key in predicted:
             out.append({"start": key, "price": round(predicted[key], 3), "source": "predicted"})
     return out
@@ -141,43 +144,40 @@ def merge_actual_and_predicted(actual, predicted, series_start, num_quarters):
 def build_forecast(
     nordpool_prices,
     wind_records,
+    wind_actual_records,
     consumption_forecast_records,
     consumption_actual_records,
-    horizon_hours,
+    series_start,
+    series_end,
     default_slope,
     default_intercept,
     min_fit_samples,
     now=None,
-    series_start=None,
 ):
     """Run the full pipeline at 15-min resolution.
 
-    series_start defaults to `_quarter_floor(now)`. Pass an earlier instant
-    (e.g. local midnight in UTC) to make the output series cover the full
-    current day; the past quarters are filled from the source price sensor's
-    actual day-ahead values.
-
-    consumption_actual_records are hourly (Fingrid dataset 124); they are
-    expanded to 4 quarter-keys per hour before extending the forecast.
+    Series spans [series_start, series_end), both normally aligned to local
+    midnight so the dashboard always shows whole days. Quarters past the
+    Fingrid forecast horizons are filled from the actual datasets one week
+    back (same weekday + same quarter).
     """
     if now is None:
         now = datetime.now(timezone.utc)
-    if series_start is None:
-        series_start = _quarter_floor(now)
-    else:
-        series_start = _quarter_floor(series_start)
+    series_start = _quarter_floor(series_start)
+    series_end = _quarter_floor(series_end)
 
     actual_prices = parse_price_sensor_attributes(nordpool_prices)
     wind_q = bucket_records(wind_records)
+    wind_actual_q = bucket_records(wind_actual_records)
     cons_q = bucket_records(consumption_forecast_records)
     cons_actual_q = expand_hourly_to_quarters(consumption_actual_records)
 
-    horizon_end = _quarter_floor(now) + timedelta(hours=horizon_hours)
-    cons_q_extended = extend_consumption_with_last_week(
-        cons_q, cons_actual_q, horizon_end
-    )
+    cons_q_extended = extend_with_last_week(cons_q, cons_actual_q, series_end)
+    wind_q_extended = extend_with_last_week(wind_q, wind_actual_q, series_end)
 
-    residual = {q: cons_q_extended[q] - wind_q.get(q, 0.0) for q in cons_q_extended}
+    residual = {
+        q: cons_q_extended[q] - wind_q_extended.get(q, 0.0) for q in cons_q_extended
+    }
 
     xs, ys = align_series(actual_prices, residual)
     used_default = False
@@ -191,10 +191,11 @@ def build_forecast(
 
     predicted = predict_series(residual, a, b)
 
-    num_quarters = max(0, int((horizon_end - series_start).total_seconds() // 900))
+    num_quarters = max(0, int((series_end - series_start).total_seconds() // 900))
     series = merge_actual_and_predicted(
         actual_prices, predicted, series_start, num_quarters
     )
+
     return {
         "series": series,
         "slope": a,
@@ -202,4 +203,5 @@ def build_forecast(
         "fit_samples": len(xs),
         "fit_used_default": used_default,
         "consumption_extended_quarters": len(cons_q_extended) - len(cons_q),
+        "wind_extended_quarters": len(wind_q_extended) - len(wind_q),
     }

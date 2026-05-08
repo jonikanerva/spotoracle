@@ -17,14 +17,15 @@ from .const import (
     CONF_PRICE_SENSOR,
     DATASET_CONSUMPTION_ACTUAL,
     DATASET_CONSUMPTION_FORECAST,
+    DATASET_WIND_ACTUAL,
     DATASET_WIND_FORECAST_15MIN,
     DEFAULT_INTERCEPT,
     DEFAULT_SLOPE,
     DOMAIN,
     FINGRID_API_BASE,
-    FORECAST_HOURS,
     HISTORY_DAYS,
     MIN_FIT_SAMPLES,
+    SERIES_DAYS,
     UPDATE_INTERVAL,
 )
 from .predictor import build_forecast
@@ -88,26 +89,32 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-        start = now - timedelta(days=HISTORY_DAYS)   # 7 päivää historiaa + 1 päivä bufferia
-        end = now + timedelta(hours=FORECAST_HOURS)
 
-        # Local midnight (in HA's configured time zone), expressed in UTC.
-        # The output series starts here so the dashboard can render today
-        # from 00:00 onwards, including hours already passed.
+        # Series spans local midnight today → local midnight + SERIES_DAYS.
+        # All Fingrid lookups bracket this window with HISTORY_DAYS of context
+        # (for last-week extension) and 1 day of buffer at the end.
         local_now = dt_util.now()
         local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         series_start_utc = local_midnight.astimezone(timezone.utc)
+        series_end_utc = (
+            local_midnight + timedelta(days=SERIES_DAYS)
+        ).astimezone(timezone.utc)
+
+        fetch_start = series_start_utc - timedelta(days=HISTORY_DAYS)
+        fetch_end = series_end_utc + timedelta(hours=24)
 
         datasets = await self._fetch_datasets(
             [
                 DATASET_WIND_FORECAST_15MIN,
+                DATASET_WIND_ACTUAL,
                 DATASET_CONSUMPTION_FORECAST,
                 DATASET_CONSUMPTION_ACTUAL,
             ],
-            start,
-            end,
+            fetch_start,
+            fetch_end,
         )
         wind = datasets[DATASET_WIND_FORECAST_15MIN]
+        wind_actual = datasets[DATASET_WIND_ACTUAL]
         cons_forecast = datasets[DATASET_CONSUMPTION_FORECAST]
         cons_actual = datasets[DATASET_CONSUMPTION_ACTUAL]
         nordpool = self._read_price_sensor()
@@ -115,21 +122,23 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         result = build_forecast(
             nordpool_prices=nordpool,
             wind_records=wind,
+            wind_actual_records=wind_actual,
             consumption_forecast_records=cons_forecast,
             consumption_actual_records=cons_actual,
-            horizon_hours=FORECAST_HOURS,
+            series_start=series_start_utc,
+            series_end=series_end_utc,
             default_slope=DEFAULT_SLOPE,
             default_intercept=DEFAULT_INTERCEPT,
             min_fit_samples=MIN_FIT_SAMPLES,
             now=now,
-            series_start=series_start_utc,
         )
         _LOGGER.debug(
-            "Fit: a=%.5f b=%.3f samples=%d default=%s extended_q=%d",
+            "Fit: a=%.5f b=%.3f samples=%d default=%s cons_ext=%d wind_ext=%d",
             result["slope"],
             result["intercept"],
             result["fit_samples"],
             result["fit_used_default"],
             result["consumption_extended_quarters"],
+            result["wind_extended_quarters"],
         )
         return result
