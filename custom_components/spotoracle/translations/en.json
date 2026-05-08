@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SpotOracle",
+        "description": "Pick a Nord Pool style price sensor whose 'prices' attribute is a list [{start, price}, ...] and provide your Fingrid Open Data API key.",
+        "data": {
+          "api_key": "Fingrid API key",
+          "price_sensor": "Source price sensor"
+        }
+      }
+    },
+    "error": {
+      "required": "Required field.",
+      "entity_not_found": "Sensor not found.",
+      "invalid_attributes": "Sensor has no 'prices' list attribute."
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance is allowed."
+    }
+  }
+}

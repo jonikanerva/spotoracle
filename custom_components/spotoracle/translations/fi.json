@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SpotOracle",
+        "description": "Valitse Nord Pool -tyyppinen hintasensori (jonka attribuutissa 'prices' on lista [{start, price}, ...]) ja anna Fingrid Avoindata -API-avain.",
+        "data": {
+          "api_key": "Fingrid API-avain",
+          "price_sensor": "Lähde-hintasensori"
+        }
+      }
+    },
+    "error": {
+      "required": "Pakollinen kenttä.",
+      "entity_not_found": "Sensoria ei löytynyt.",
+      "invalid_attributes": "Sensorilla ei ole 'prices'-listaattribuuttia."
+    },
+    "abort": {
+      "single_instance_allowed": "Vain yksi instanssi sallittu."
+    }
+  }
+}
