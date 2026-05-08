@@ -47,8 +47,8 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         url = f"{FINGRID_API_BASE}/data"
         params = {
             "datasets": ",".join(str(d) for d in dataset_ids),
-            "startTime": start.isoformat().replace("+00:00", "Z"),
-            "endTime": end.isoformat().replace("+00:00", "Z"),
+            "startTime": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "endTime": end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "format": "json",
             "pageSize": 20000,
         }
@@ -82,14 +82,11 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
     def _read_price_sensor(self) -> list[dict]:
         state = self.hass.states.get(self.price_sensor)
         if state is None:
-            _LOGGER.warning("Price sensor %s not found", self.price_sensor)
-            return []
+            raise UpdateFailed(f"Price sensor {self.price_sensor} not found")
         prices = state.attributes.get("prices") or []
         return prices if isinstance(prices, list) else []
 
     async def _async_update_data(self) -> dict:
-        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-
         # Series spans local midnight today → local midnight + SERIES_DAYS.
         # All Fingrid lookups bracket this window with HISTORY_DAYS of context
         # (for last-week extension) and 1 day of buffer at the end.
@@ -130,8 +127,8 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
             default_slope=DEFAULT_SLOPE,
             default_intercept=DEFAULT_INTERCEPT,
             min_fit_samples=MIN_FIT_SAMPLES,
-            now=now,
         )
+        result["generated_at"] = datetime.now(timezone.utc).isoformat()
         _LOGGER.debug(
             "Fit: a=%.5f b=%.3f samples=%d default=%s cons_ext=%d wind_ext=%d",
             result["slope"],

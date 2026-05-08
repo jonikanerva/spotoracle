@@ -13,7 +13,8 @@
     "error": {
       "required": "Pakollinen kenttä.",
       "entity_not_found": "Sensoria ei löytynyt.",
-      "invalid_attributes": "Sensorilla ei ole 'prices'-listaattribuuttia."
+      "invalid_attributes": "Sensorilla ei ole 'prices'-listaattribuuttia.",
+      "invalid_api_key": "Virheellinen API-avain — Fingrid ei hyväksynyt tunnistetta."
     },
     "abort": {
       "single_instance_allowed": "Vain yksi instanssi sallittu."

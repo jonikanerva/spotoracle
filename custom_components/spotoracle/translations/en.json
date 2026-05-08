@@ -13,7 +13,8 @@
     "error": {
       "required": "Required field.",
       "entity_not_found": "Sensor not found.",
-      "invalid_attributes": "Sensor has no 'prices' list attribute."
+      "invalid_attributes": "Sensor has no 'prices' list attribute.",
+      "invalid_api_key": "Invalid API key — Fingrid rejected the credential."
     },
     "abort": {
       "single_instance_allowed": "Only one instance is allowed."

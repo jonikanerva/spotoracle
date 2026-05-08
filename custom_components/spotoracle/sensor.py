@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, SENSOR_FORECAST
 from .coordinator import SpotOracleCoordinator
+from .predictor import _quarter_key
 
 DEFAULT_UNIT = "snt/kWh"
 
@@ -48,12 +49,24 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
         return (self.coordinator.data or {}).get("series", [])
 
     @property
+    def _current_point(self) -> dict | None:
+        if not self._series:
+            return None
+        key = _quarter_key(datetime.now(timezone.utc))
+        return next(
+            (s for s in self._series if s["start"] == key),
+            self._series[0],
+        )
+
+    @property
     def native_value(self):
-        return self._series[0]["price"] if self._series else None
+        point = self._current_point
+        return point["price"] if point else None
 
     @property
     def extra_state_attributes(self) -> dict:
         d = self.coordinator.data or {}
+        point = self._current_point
         attrs = {
             "forecast": self._series,
             "slope": round(d.get("slope", 0.0), 6),
@@ -62,8 +75,8 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
             "fit_used_default": d.get("fit_used_default", True),
             "consumption_extended_quarters": d.get("consumption_extended_quarters", 0),
             "wind_extended_quarters": d.get("wind_extended_quarters", 0),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": d.get("generated_at"),
         }
-        if self._series:
-            attrs["source"] = self._series[0].get("source")
+        if point:
+            attrs["source"] = point.get("source")
         return attrs

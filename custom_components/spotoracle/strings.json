@@ -3,20 +3,21 @@
     "step": {
       "user": {
         "title": "SpotOracle",
-        "description": "Valitse Nord Pool -tyyppinen hintasensori (jonka attribuutissa 'prices' on lista [{start, price}, ...]) ja anna Fingrid Avoindata -API-avain.",
+        "description": "Pick a Nord Pool style price sensor whose 'prices' attribute is a list [{start, price}, ...] and provide your Fingrid Open Data API key.",
         "data": {
-          "api_key": "Fingrid API-avain",
-          "price_sensor": "Lähde-hintasensori"
+          "api_key": "Fingrid API key",
+          "price_sensor": "Source price sensor"
         }
       }
     },
     "error": {
-      "required": "Pakollinen kenttä.",
-      "entity_not_found": "Sensoria ei löytynyt.",
-      "invalid_attributes": "Sensorilla ei ole 'prices'-listaattribuuttia."
+      "required": "Required field.",
+      "entity_not_found": "Sensor not found.",
+      "invalid_attributes": "Sensor has no 'prices' list attribute.",
+      "invalid_api_key": "Invalid API key — Fingrid rejected the credential."
     },
     "abort": {
-      "single_instance_allowed": "Vain yksi instanssi sallittu."
+      "single_instance_allowed": "Only one instance is allowed."
     }
   }
 }

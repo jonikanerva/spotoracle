@@ -1,8 +1,11 @@
 """Pure prediction logic. Quarter keys are ISO8601 UTC strings (15-min floor)."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _parse_iso(s: str) -> datetime:
@@ -27,6 +30,8 @@ def _quarter_key(dt: datetime) -> str:
 def bucket_records(records: Iterable[dict]) -> dict[str, float]:
     """Bucket records by 15-min quarter. If multiple samples land in the same
     quarter (e.g. accidental higher-resolution input), take the mean.
+    Malformed records are skipped with a debug log; one bad row never
+    crashes the whole update.
     """
     buckets: dict[str, list[float]] = {}
     for r in records:
@@ -34,8 +39,14 @@ def bucket_records(records: Iterable[dict]) -> dict[str, float]:
         val = r.get("value")
         if start is None or val is None:
             continue
-        buckets.setdefault(_quarter_key(_parse_iso(start)), []).append(float(val))
-    return {k: sum(vs) / len(vs) for k, vs in buckets.items() if vs}
+        try:
+            key = _quarter_key(_parse_iso(start))
+            quarter_value = float(val)
+        except (ValueError, TypeError):
+            _LOGGER.debug("Skipping malformed record: %s", r)
+            continue
+        buckets.setdefault(key, []).append(quarter_value)
+    return {k: sum(vs) / len(vs) for k, vs in buckets.items()}
 
 
 def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
@@ -48,11 +59,22 @@ def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
     buckets: dict[str, list[float]] = {}
     for p in prices:
         start = p.get("start") or p.get("startTime")
-        price = p.get("price") or p.get("value")
+        if "price" in p:
+            price = p["price"]
+        elif "value" in p:
+            price = p["value"]
+        else:
+            continue
         if start is None or price is None:
             continue
-        buckets.setdefault(_quarter_key(_parse_iso(start)), []).append(float(price))
-    return {k: sum(vs) / len(vs) for k, vs in buckets.items() if vs}
+        try:
+            key = _quarter_key(_parse_iso(start))
+            quarter_price = float(price)
+        except (ValueError, TypeError):
+            _LOGGER.debug("Skipping malformed price record: %s", p)
+            continue
+        buckets.setdefault(key, []).append(quarter_price)
+    return {k: sum(vs) / len(vs) for k, vs in buckets.items()}
 
 
 def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float]:
@@ -67,10 +89,15 @@ def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float
         val = r.get("value")
         if start is None or val is None:
             continue
-        hour_dt = _parse_iso(start).replace(minute=0, second=0, microsecond=0)
+        try:
+            hour_dt = _parse_iso(start).replace(minute=0, second=0, microsecond=0)
+            quarter_value = float(val)
+        except (ValueError, TypeError):
+            _LOGGER.debug("Skipping malformed hourly record: %s", r)
+            continue
         for q in range(4):
             qts = hour_dt + timedelta(minutes=15 * q)
-            out[_quarter_key(qts)] = float(val)
+            out[_quarter_key(qts)] = quarter_value
     return out
 
 
@@ -99,7 +126,9 @@ def extend_with_last_week(
     return out
 
 
-def align_series(price_dict, residual_dict):
+def align_series(
+    price_dict: dict[str, float], residual_dict: dict[str, float]
+) -> tuple[list[float], list[float]]:
     common = sorted(set(price_dict) & set(residual_dict))
     return [residual_dict[h] for h in common], [price_dict[h] for h in common]
 
@@ -120,40 +149,66 @@ def fit_linear(x: list[float], y: list[float]) -> tuple[float, float]:
     return a, b
 
 
-def predict_series(residual_dict, a, b):
+def predict_series(
+    residual_dict: dict[str, float], a: float, b: float
+) -> dict[str, float]:
     return {h: a * r + b for h, r in residual_dict.items()}
 
 
-def merge_actual_and_predicted(actual, predicted, series_start, num_quarters):
+def merge_actual_and_predicted(
+    actual: dict[str, float],
+    predicted: dict[str, float],
+    series_start: datetime,
+    num_quarters: int,
+) -> list[dict]:
     """Build a quarter-by-quarter list for [series_start, series_start + num_quarters * 15min).
 
     series_start is normally aligned to the start of the local day so the chart
     can render the full current day even before the current moment.
+
+    Invariant: returns exactly `num_quarters` entries in chronological order,
+    no gaps, no null prices. When neither `actual` nor `predicted` covers a
+    quarter, forward-fill from the most recent predicted value. If the very
+    first quarters have no predicted data either, look ahead for the first
+    available predicted value to seed the fill.
     """
-    out = []
-    for i in range(num_quarters):
-        ts = series_start + timedelta(minutes=15 * i)
-        key = ts.isoformat()
+    keys = [(series_start + timedelta(minutes=15 * i)).isoformat() for i in range(num_quarters)]
+
+    seed: float | None = None
+    for key in keys:
+        if key in predicted:
+            seed = predicted[key]
+            break
+
+    out: list[dict] = []
+    last_predicted: float | None = seed
+    for key in keys:
         if key in actual:
             out.append({"start": key, "price": round(actual[key], 3), "source": "nordpool"})
-        elif key in predicted:
-            out.append({"start": key, "price": round(predicted[key], 3), "source": "predicted"})
+            continue
+        if key in predicted:
+            last_predicted = predicted[key]
+            out.append({"start": key, "price": round(last_predicted, 3), "source": "predicted"})
+            continue
+        if last_predicted is not None:
+            out.append({"start": key, "price": round(last_predicted, 3), "source": "predicted"})
+            continue
+        out.append({"start": key, "price": 0.0, "source": "predicted"})
     return out
 
 
 def build_forecast(
-    nordpool_prices,
-    wind_records,
-    wind_actual_records,
-    consumption_forecast_records,
-    consumption_actual_records,
-    series_start,
-    series_end,
-    default_slope,
-    default_intercept,
-    min_fit_samples,
-    now=None,
-):
+    nordpool_prices: Iterable[dict],
+    wind_records: Iterable[dict],
+    wind_actual_records: Iterable[dict],
+    consumption_forecast_records: Iterable[dict],
+    consumption_actual_records: Iterable[dict],
+    series_start: datetime,
+    series_end: datetime,
+    default_slope: float,
+    default_intercept: float,
+    min_fit_samples: int,
+) -> dict:
     """Run the full pipeline at 15-min resolution.
 
     Series spans [series_start, series_end), both normally aligned to local
@@ -161,8 +216,6 @@ def build_forecast(
     Fingrid forecast horizons are filled from the actual datasets one week
     back (same weekday + same quarter).
     """
-    if now is None:
-        now = datetime.now(timezone.utc)
     series_start = _quarter_floor(series_start)
     series_end = _quarter_floor(series_end)
 
