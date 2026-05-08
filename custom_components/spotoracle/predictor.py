@@ -1,4 +1,4 @@
-"""Pure prediction logic. Hour keys are ISO8601 UTC strings."""
+"""Pure prediction logic. Quarter keys are ISO8601 UTC strings (15-min floor)."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -14,31 +14,36 @@ def _parse_iso(s: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def _floor_to_hour(dt: datetime) -> datetime:
-    return dt.replace(minute=0, second=0, microsecond=0)
+def _quarter_floor(dt: datetime) -> datetime:
+    """Floor a datetime down to the nearest 15-min quarter."""
+    minute = (dt.minute // 15) * 15
+    return dt.replace(minute=minute, second=0, microsecond=0)
 
 
-def _hour_key(dt: datetime) -> str:
-    return _floor_to_hour(dt).isoformat()
+def _quarter_key(dt: datetime) -> str:
+    return _quarter_floor(dt).isoformat()
 
 
-def aggregate_15min_to_hourly(records: Iterable[dict]) -> dict[str, float]:
+def bucket_records(records: Iterable[dict]) -> dict[str, float]:
+    """Bucket records by 15-min quarter. If multiple samples land in the same
+    quarter (e.g. accidental higher-resolution input), take the mean.
+    """
     buckets: dict[str, list[float]] = {}
     for r in records:
         start = r.get("startTime") or r.get("start_time") or r.get("start")
         val = r.get("value")
         if start is None or val is None:
             continue
-        buckets.setdefault(_hour_key(_parse_iso(start)), []).append(float(val))
+        buckets.setdefault(_quarter_key(_parse_iso(start)), []).append(float(val))
     return {k: sum(vs) / len(vs) for k, vs in buckets.items() if vs}
 
 
 def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
-    """Aggregate price entries (possibly 15-min) to hourly mean.
+    """Parse Nord Pool style price entries to a quarter-keyed dict.
 
-    Nord Pool moved to 15-minute MTU pricing in 2025; sensors may expose
-    either hourly or 15-min entries. Bucketing by hour and taking the mean
-    gives the right hourly value in both cases.
+    Nord Pool moved to 15-minute MTU pricing in 2025; the source sensor's
+    `prices` attribute is expected to expose 15-min entries. If multiple
+    samples per quarter exist, take the mean.
     """
     buckets: dict[str, list[float]] = {}
     for p in prices:
@@ -46,8 +51,27 @@ def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
         price = p.get("price") or p.get("value")
         if start is None or price is None:
             continue
-        buckets.setdefault(_hour_key(_parse_iso(start)), []).append(float(price))
+        buckets.setdefault(_quarter_key(_parse_iso(start)), []).append(float(price))
     return {k: sum(vs) / len(vs) for k, vs in buckets.items() if vs}
+
+
+def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float]:
+    """Expand hourly records into 4 quarter-keys per hour with the same value.
+
+    Used for Fingrid datasets that are hourly resolution (e.g. 124, actual
+    consumption) when the rest of the pipeline operates on 15-min quarters.
+    """
+    out: dict[str, float] = {}
+    for r in hourly_records:
+        start = r.get("startTime") or r.get("start_time") or r.get("start")
+        val = r.get("value")
+        if start is None or val is None:
+            continue
+        hour_dt = _parse_iso(start).replace(minute=0, second=0, microsecond=0)
+        for q in range(4):
+            qts = hour_dt + timedelta(minutes=15 * q)
+            out[_quarter_key(qts)] = float(val)
+    return out
 
 
 def extend_consumption_with_last_week(
@@ -55,20 +79,20 @@ def extend_consumption_with_last_week(
     cons_actual: dict[str, float],
     horizon_end: datetime,
 ) -> dict[str, float]:
-    """Fill missing hours after the forecast ends with same-weekday-same-hour
-    values from one week ago. Returns a new dict (does not mutate input).
+    """Fill missing quarters after the forecast ends with values from the
+    same weekday/quarter one week ago.
     """
     out = dict(cons_forecast)
     if not cons_forecast:
         return out
     last_known = _parse_iso(max(cons_forecast))
-    cursor = last_known + timedelta(hours=1)
+    cursor = last_known + timedelta(minutes=15)
     while cursor < horizon_end:
         prev_week = cursor - timedelta(days=7)
-        prev_key = _hour_key(prev_week)
+        prev_key = _quarter_key(prev_week)
         if prev_key in cons_actual:
-            out[_hour_key(cursor)] = cons_actual[prev_key]
-        cursor += timedelta(hours=1)
+            out[_quarter_key(cursor)] = cons_actual[prev_key]
+        cursor += timedelta(minutes=15)
     return out
 
 
@@ -98,12 +122,13 @@ def predict_series(residual_dict, a, b):
 
 
 def merge_actual_and_predicted(actual, predicted, horizon_hours, now=None):
+    """Build a quarter-by-quarter list for [now, now + horizon_hours)."""
     if now is None:
         now = datetime.now(timezone.utc)
-    start = _floor_to_hour(now)
+    start = _quarter_floor(now)
     out = []
-    for i in range(horizon_hours):
-        ts = start + timedelta(hours=i)
+    for i in range(horizon_hours * 4):
+        ts = start + timedelta(minutes=15 * i)
         key = ts.isoformat()
         if key in actual:
             out.append({"start": key, "price": round(actual[key], 3), "source": "day_ahead"})
@@ -123,25 +148,25 @@ def build_forecast(
     min_fit_samples,
     now=None,
 ):
-    """Run the full pipeline.
+    """Run the full pipeline at 15-min resolution.
 
-    consumption_actual_records is used to extend the forecast horizon by
-    copying same-weekday-same-hour values from the past week.
+    consumption_actual_records are hourly (Fingrid dataset 124); they are
+    expanded to 4 quarter-keys per hour before extending the forecast.
     """
     if now is None:
         now = datetime.now(timezone.utc)
 
     actual_prices = parse_price_sensor_attributes(nordpool_prices)
-    wind_h = aggregate_15min_to_hourly(wind_records)
-    cons_h = aggregate_15min_to_hourly(consumption_forecast_records)
-    cons_actual_h = aggregate_15min_to_hourly(consumption_actual_records)
+    wind_q = bucket_records(wind_records)
+    cons_q = bucket_records(consumption_forecast_records)
+    cons_actual_q = expand_hourly_to_quarters(consumption_actual_records)
 
-    horizon_end = _floor_to_hour(now) + timedelta(hours=horizon_hours)
-    cons_h_extended = extend_consumption_with_last_week(
-        cons_h, cons_actual_h, horizon_end
+    horizon_end = _quarter_floor(now) + timedelta(hours=horizon_hours)
+    cons_q_extended = extend_consumption_with_last_week(
+        cons_q, cons_actual_q, horizon_end
     )
 
-    residual = {h: cons_h_extended[h] - wind_h.get(h, 0.0) for h in cons_h_extended}
+    residual = {q: cons_q_extended[q] - wind_q.get(q, 0.0) for q in cons_q_extended}
 
     xs, ys = align_series(actual_prices, residual)
     used_default = False
@@ -163,5 +188,5 @@ def build_forecast(
         "intercept": b,
         "fit_samples": len(xs),
         "fit_used_default": used_default,
-        "consumption_extended_hours": len(cons_h_extended) - len(cons_h),
+        "consumption_extended_quarters": len(cons_q_extended) - len(cons_q),
     }

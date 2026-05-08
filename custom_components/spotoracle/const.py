@@ -15,8 +15,8 @@ DATASET_CONSUMPTION_ACTUAL = 124        # toteutunut kulutus, hourly (käytetä�
 
 HISTORY_DAYS = 8                        # kuinka monta päivää historiaa haetaan ekstrapolointia varten
 
-FORECAST_HOURS = 72
-MIN_FIT_SAMPLES = 6
+FORECAST_HOURS = 72              # internally 72 * 4 = 288 quarters
+MIN_FIT_SAMPLES = 24             # quarters; 24 × 15 min = 6h minimum overlap
 
 DEFAULT_SLOPE = 0.0020       # snt/kWh per MW residual
 DEFAULT_INTERCEPT = -2.0     # snt/kWh

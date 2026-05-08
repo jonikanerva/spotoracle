@@ -116,11 +116,11 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
             now=now,
         )
         _LOGGER.debug(
-            "Fit: a=%.5f b=%.3f samples=%d default=%s extended=%d",
+            "Fit: a=%.5f b=%.3f samples=%d default=%s extended_q=%d",
             result["slope"],
             result["intercept"],
             result["fit_samples"],
             result["fit_used_default"],
-            result["consumption_extended_hours"],
+            result["consumption_extended_quarters"],
         )
         return result
