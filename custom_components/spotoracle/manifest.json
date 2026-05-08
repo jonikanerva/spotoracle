@@ -1,7 +1,7 @@
 {
   "domain": "spotoracle",
-  "name": "SpotOracle (FI)",
-  "version": "0.5.0",
+  "name": "SpotOracle",
+  "version": "0.5.1",
   "documentation": "https://github.com/jonikanerva/spotoracle",
   "issue_tracker": "https://github.com/jonikanerva/spotoracle/issues",
   "codeowners": ["@jonikanerva"],

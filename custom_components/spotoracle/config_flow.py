@@ -28,7 +28,7 @@ class SpotOracleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_PRICE_SENSOR] = "invalid_attributes"
             if not errors:
                 return self.async_create_entry(
-                    title="SpotOracle (FI)",
+                    title="SpotOracle",
                     data={CONF_API_KEY: api_key, CONF_PRICE_SENSOR: price_sensor},
                 )
 

@@ -1,5 +1,5 @@
 {
-  "name": "SpotOracle (FI)",
+  "name": "SpotOracle",
   "render_readme": true,
   "country": "FI",
   "homeassistant": "2024.1.0",

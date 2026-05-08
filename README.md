@@ -1,4 +1,8 @@
-# SpotOracle (FI)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jonikanerva/spotoracle/main/icon.png" alt="SpotOracle" width="128" height="128"/>
+</p>
+
+# SpotOracle
 
 Home Assistant -integraatio, joka tuottaa **0–72h sähkönhintaennusteen** Suomen FI-hinta-alueelle yhdistämällä olemassa olevan Nord Pool day-ahead -hintasensorisi ja Fingrid Avoindata -ennusteet (tuulivoima + kulutus). Heuristinen lineaarinen regressiomalli — ei numpy/pandas/ML-riippuvuuksia.
 
@@ -45,7 +49,7 @@ Regressio sovittaa kertoimet suoraan lähdesensorin arvoja vasten, joten ennuste
 1. Avaa **HACS** → ⋮ → **Custom repositories**.
 2. Liitä URL `https://github.com/jonikanerva/spotoracle`, kategoria **Integration** → **Add**.
 3. Etsi listalta **"SpotOracle"** → **Download** → käynnistä Home Assistant uudelleen.
-4. **Settings → Devices & services → Add integration → "SpotOracle (FI)"**.
+4. **Settings → Devices & services → Add integration → "SpotOracle"**.
 5. Hae [Fingrid Avoindata -API-avain](https://developer-data.fingrid.fi/apis) (ilmainen, vain sähköpostirekisteröinti) ja valitse lähdesensorisi dropdownista.
 
 ## Sensorin attribuutit
@@ -180,6 +184,15 @@ Kortti näyttää **kuluvan päivän aamuyön → 3 päivää eteenpäin** väri
 
 - **Pollaus** Fingridille 30 min välein. Tämä on päiväpyyntöjen yläraja: ~144 pyyntöä/vrk per dataset, mutta kaikki haetaan yhdellä HTTP-kutsulla → noin 48 kutsua/vrk (raja 10 000).
 - **Reaktiivinen päivitys**: integraatio kuuntelee lähdesensorin tilan vaihdoksia ja päivittää itsensä **välittömästi** kun lähdesensorin `prices`-attribuutti muuttuu. Tämä tarkoittaa että kun Nord Pool julkaisee huomisen hinnat klo 14:00–15:00 EET ja lähdesensorisi tartuu niihin, SpotOracle saa ne sekunnissa — ei tarvitse odottaa seuraavaa 30 min sykliä.
+
+## HACS-ikonin näkyvyys
+
+Tämän repon juuressa olevaa `icon.png`:tä HACS **ei näytä automaattisesti** integraatiolistauksessa — HACS hakee ikonit virallisesta [`home-assistant/brands`](https://github.com/home-assistant/brands) -repostosta. Saadakseen ikonin näkyviin HACS-listauksessa, tee Brands-repoon pull request joka lisää:
+
+- `custom_integrations/spotoracle/icon.png` (256×256, tämän repon `icon.png`)
+- `custom_integrations/spotoracle/icon@2x.png` (512×512, tämän repon `icon@2x.png`)
+
+Ohjeet: <https://github.com/home-assistant/brands/blob/master/README.md>. Hyväksyntä on yleensä päivissä. Sitä odottaessa HACS näyttää oletusikonin, mutta integraatio toimii muuten täysin normaalisti.
 
 ## Lisenssi
 
