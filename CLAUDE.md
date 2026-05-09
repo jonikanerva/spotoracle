@@ -108,6 +108,7 @@ from predictor import build_forecast
 
 - **Releases must go through a feature branch + GitHub pull request.** Any change that bumps `custom_components/spotoracle/manifest.json` `version` lands on a `release/vX.Y.Z` branch, is pushed to origin, and is merged via `gh pr create` → review → merge. Never bump `version` directly on `main`.
 - **Merge with merge commits, never squash.** Release PRs (and any feature-branch PR) merge with `gh pr merge --merge`, not `--squash`. The PR's individual commits are kept on `main` as the audit trail.
+- **Never run `gh pr merge` or `gh release create` without explicit user approval for that specific occurrence.** Plan approval covers code changes only. Even when the user has approved the implementation plan or pre-authorized verification commands via `ExitPlanMode`'s `allowedPrompts`, treat each PR merge and each GitHub Release as a separate action requiring fresh confirmation. Stop after `gh pr create`, paste the PR URL in chat, and wait for the user to say "merge" (or equivalent). After merging, stop again before `gh release create` and confirm a second time.
 - Direct commits to `main` are fine for small non-version fixes (typos, comment cleanup, README clarifications, etc.).
 - Use a feature branch + merge also when: a) the change spans multiple releases, or b) you have in-progress work that should not be visible on `main`.
 - Tag (`vX.Y.Z`) only after the release PR has been merged into `main`.
@@ -124,10 +125,10 @@ Order of operations every release:
 3. Update `README.md` if user-visible attributes / behaviour changed.
 4. `git commit` (let GPG signing happen — this requires `dangerouslyDisableSandbox: true` because gpg-agent needs `~/.gnupg/`).
 5. `git push -u origin release/vX.Y.Z`
-6. Open the PR: `gh pr create --title "vX.Y.Z: ..." --body "..."`. Review, then `gh pr merge --merge` (NOT `--squash` — preserve individual commits on `main`).
+6. Open the PR: `gh pr create --title "vX.Y.Z: ..." --body "..."`. **STOP — paste the PR URL in chat and wait for the user to explicitly say "merge" before** running `gh pr merge --merge` (NOT `--squash` — preserve individual commits on `main`).
 7. After merge: `git checkout main && git pull --ff-only`.
 8. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-9. **`gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."`** ← this is the step that surfaces the version in HACS.
+9. **STOP again — confirm with the user before** running `gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."` ← this is the step that surfaces the version in HACS.
 
 The user (`@jonikanerva`) is the codeowner; SSH for git and `gh` for releases are both authenticated as them on this machine.
 
