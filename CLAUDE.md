@@ -123,12 +123,13 @@ Order of operations every release:
 1. Create a release branch: `git checkout -b release/vX.Y.Z`.
 2. Bump `custom_components/spotoracle/manifest.json` `version` to the new value.
 3. Update `README.md` if user-visible attributes / behaviour changed.
-4. `git commit` (let GPG signing happen — this requires `dangerouslyDisableSandbox: true` because gpg-agent needs `~/.gnupg/`).
-5. `git push -u origin release/vX.Y.Z`
-6. Open the PR: `gh pr create --title "vX.Y.Z: ..." --body "..."`. **STOP — paste the PR URL in chat and wait for the user to explicitly say "merge" before** running `gh pr merge --merge` (NOT `--squash` — preserve individual commits on `main`).
-7. After merge: `git checkout main && git pull --ff-only`.
-8. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-9. **STOP again — confirm with the user before** running `gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."` ← this is the step that surfaces the version in HACS.
+4. Move the `## [Unreleased]` section in `CHANGELOG.md` under a new `## [X.Y.Z] - YYYY-MM-DD` heading, add a fresh empty `## [Unreleased]`, and update the link references at the bottom of the file.
+5. `git commit` (let GPG signing happen — this requires `dangerouslyDisableSandbox: true` because gpg-agent needs `~/.gnupg/`).
+6. `git push -u origin release/vX.Y.Z`
+7. Open the PR: `gh pr create --title "vX.Y.Z: ..." --body "..."`. **STOP — paste the PR URL in chat and wait for the user to explicitly say "merge" before** running `gh pr merge --merge` (NOT `--squash` — preserve individual commits on `main`).
+8. After merge: `git checkout main && git pull --ff-only`.
+9. `git tag vX.Y.Z && git push origin vX.Y.Z`.
+10. **STOP again — confirm with the user before** running `gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."` ← this is the step that surfaces the version in HACS.
 
 The user (`@jonikanerva`) is the codeowner; SSH for git and `gh` for releases are both authenticated as them on this machine.
 

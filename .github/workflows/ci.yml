@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # HA Core 2026.x requires Python 3.13. If HA's minimum drops or rises,
+        # update this matrix together with requirements_test.txt.
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Compile Python sources
+        run: python -m py_compile custom_components/spotoracle/*.py
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Validate JSON files
+        run: |
+          python -c "
+          import json, glob
+          paths = [
+              'hacs.json',
+              'custom_components/spotoracle/manifest.json',
+              'custom_components/spotoracle/strings.json',
+              *glob.glob('custom_components/spotoracle/translations/*.json'),
+          ]
+          for p in paths:
+              with open(p) as f:
+                  json.load(f)
+              print(f'OK: {p}')
+          "

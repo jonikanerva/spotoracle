@@ -1,0 +1,11 @@
+# Test-only dependencies for SpotOracle.
+#
+# Runtime has no Python dependencies (aiohttp and voluptuous come from the
+# Home Assistant runtime). These packages are needed only to run the
+# I/O-layer tests against real HA fixtures, locally and in CI.
+
+# Pinned exactly: pytest-homeassistant-custom-component tracks HA Core's
+# release cadence and ships breaking changes frequently. An unpinned version
+# means a transient upstream release could turn CI red on an unrelated PR.
+# Bump intentionally when updating against a new HA Core baseline.
+pytest-homeassistant-custom-component==0.13.316
