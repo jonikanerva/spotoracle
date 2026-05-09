@@ -1,0 +1,9 @@
+# Test-only dependencies for SpotOracle.
+#
+# Runtime has no Python dependencies (aiohttp and voluptuous come from the
+# Home Assistant runtime). These packages are needed only to run the
+# I/O-layer tests against real HA fixtures, locally and in CI.
+
+pytest>=8.0
+pytest-asyncio>=0.23
+pytest-homeassistant-custom-component>=0.13.200

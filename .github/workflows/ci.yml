@@ -23,8 +23,11 @@ jobs:
       - name: Compile Python sources
         run: python -m py_compile custom_components/spotoracle/*.py
 
-      - name: Run unit tests
-        run: python -m unittest discover -v tests
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Run tests
+        run: pytest -v
 
       - name: Validate JSON files
         run: |
