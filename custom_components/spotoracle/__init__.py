@@ -6,9 +6,10 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import DOMAIN
+from .const import CONF_FLOOR_SENSOR, DOMAIN
 from .coordinator import SpotOracleCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -17,6 +18,13 @@ PLATFORMS = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if CONF_FLOOR_SENSOR not in entry.data:
+        raise ConfigEntryError(
+            "Floor sensor is required since v0.7.2. Open Settings → Devices "
+            "& services → SpotOracle → ⋮ → Reconfigure and set the "
+            "'Current price sensor for floor calibration' field."
+        )
+
     coordinator = SpotOracleCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

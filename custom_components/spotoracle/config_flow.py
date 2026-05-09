@@ -97,7 +97,7 @@ class SpotOracleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Optional(
+                vol.Required(
                     CONF_FLOOR_SENSOR,
                     description={"suggested_value": defaults.get(CONF_FLOOR_SENSOR)},
                 ): selector.EntitySelector(
@@ -119,7 +119,7 @@ class SpotOracleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             api_key = user_input[CONF_API_KEY].strip()
             price_sensor = user_input[CONF_PRICE_SENSOR]
-            floor_sensor = user_input.get(CONF_FLOOR_SENSOR) or None
+            floor_sensor = user_input[CONF_FLOOR_SENSOR]
 
             if not api_key:
                 errors[CONF_API_KEY] = "required"
@@ -130,13 +130,11 @@ class SpotOracleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif not isinstance(price_state.attributes.get("prices"), list):
                 errors[CONF_PRICE_SENSOR] = "invalid_attributes"
 
-            floor_state: State | None = None
-            if floor_sensor:
-                floor_state = self.hass.states.get(floor_sensor)
-                if floor_state is None:
-                    errors[CONF_FLOOR_SENSOR] = "entity_not_found"
-                elif price_state is not None and CONF_PRICE_SENSOR not in errors:
-                    self._check_unit_match(price_state, floor_state, errors)
+            floor_state = self.hass.states.get(floor_sensor)
+            if floor_state is None:
+                errors[CONF_FLOOR_SENSOR] = "entity_not_found"
+            elif price_state is not None and CONF_PRICE_SENSOR not in errors:
+                self._check_unit_match(price_state, floor_state, errors)
 
             if not errors and not await self._validate_api_key(api_key):
                 errors[CONF_API_KEY] = "invalid_api_key"
@@ -145,9 +143,8 @@ class SpotOracleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data = {
                     CONF_API_KEY: api_key,
                     CONF_PRICE_SENSOR: price_sensor,
+                    CONF_FLOOR_SENSOR: floor_sensor,
                 }
-                if floor_sensor:
-                    data[CONF_FLOOR_SENSOR] = floor_sensor
 
                 if is_reconfigure and entry is not None:
                     return self.async_update_reload_and_abort(entry, data=data)
