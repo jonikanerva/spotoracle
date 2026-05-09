@@ -237,6 +237,7 @@ def build_forecast(
     default_slope: float,
     default_intercept: float,
     min_fit_samples: int,
+    floor: float | None = None,
 ) -> dict:
     """Run the full pipeline at 15-min resolution.
 
@@ -244,6 +245,13 @@ def build_forecast(
     midnight so the dashboard always shows whole days. Quarters past the
     Fingrid forecast horizons are filled from the actual datasets one week
     back (same weekday + same quarter).
+
+    `floor`, if provided, is a lower bound applied to predicted prices only:
+    any predicted quarter whose value would fall below `floor` is clipped to
+    `floor`. The floor is computed by the I/O boundary (coordinator) from
+    the user's long-term statistics — see CONF_FLOOR_SENSOR. Actual
+    (`nordpool`) prices are never clipped; the floor only suppresses OLS
+    extrapolation below the observed price range.
     """
     series_start = _quarter_floor(series_start)
     series_end = _quarter_floor(series_end)
@@ -272,6 +280,10 @@ def build_forecast(
         a, b, used_default = default_slope, default_intercept, True
 
     predicted = predict_series(residual, a, b)
+    clipped_quarters = 0
+    if floor is not None:
+        clipped_quarters = sum(1 for p in predicted.values() if p < floor)
+        predicted = {h: floor if p < floor else p for h, p in predicted.items()}
 
     num_quarters = max(0, int((series_end - series_start).total_seconds() // 900))
     series, fill_stats = merge_actual_and_predicted(
@@ -288,4 +300,6 @@ def build_forecast(
         "wind_extended_quarters": len(wind_q_extended) - len(wind_q),
         "filled_quarters": fill_stats["filled_quarters"],
         "zero_seeded_quarters": fill_stats["zero_seeded_quarters"],
+        "prediction_floor": floor,
+        "prediction_floor_clipped_quarters": clipped_quarters,
     }
