@@ -7,10 +7,10 @@
         "data": {
           "api_key": "Fingrid API-avain",
           "price_sensor": "Lähde-hintasensori",
-          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan (valinnainen)"
+          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan"
         },
         "data_description": {
-          "floor_sensor": "Valinnainen. Jos asetettu, ennustehintojen alarajaksi otetaan tämän sensorin pitkän aikavälin tilastoista (LTS) tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä. Käytä sensoria joka tallentaa nykyhintasi ja jolla on state_class: measurement. Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
+          "floor_sensor": "Pakollinen. Valitse sensori, joka tallentaa nykyisen sähkönhintasi (state_class: measurement). Integraatio käyttää sen pitkän aikavälin tilastoja ennustehintojen alarajan asettamiseen (tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä). Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
         }
       },
       "reconfigure": {
@@ -19,10 +19,10 @@
         "data": {
           "api_key": "Fingrid API-avain",
           "price_sensor": "Lähde-hintasensori",
-          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan (valinnainen)"
+          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan"
         },
         "data_description": {
-          "floor_sensor": "Valinnainen. Jos asetettu, ennustehintojen alarajaksi otetaan tämän sensorin pitkän aikavälin tilastoista (LTS) tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä. Jätä tyhjäksi poistaaksesi lattia-rajauksen käytöstä. Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
+          "floor_sensor": "Pakollinen. Valitse sensori, joka tallentaa nykyisen sähkönhintasi (state_class: measurement). Integraatio käyttää sen pitkän aikavälin tilastoja ennustehintojen alarajan asettamiseen (tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä). Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
         }
       }
     },

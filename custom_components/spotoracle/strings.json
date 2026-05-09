@@ -7,22 +7,22 @@
         "data": {
           "api_key": "Fingrid API key",
           "price_sensor": "Source price sensor",
-          "floor_sensor": "Current price sensor for floor calibration (optional)"
+          "floor_sensor": "Current price sensor for floor calibration"
         },
         "data_description": {
-          "floor_sensor": "Optional. If set, the lower bound for predicted prices is derived from this sensor's long-term statistics (5th percentile of hourly minimums over the past 30 days). Use a sensor that records your current effective price at measurement state_class. Its unit_of_measurement must match the source price sensor."
+          "floor_sensor": "Required. Pick a sensor that records your effective current electricity price (state_class: measurement). The integration uses its long-term statistics to set a lower bound for predicted prices (5th percentile of hourly minimums over the past 30 days). Its unit_of_measurement must match the source price sensor."
         }
       },
       "reconfigure": {
         "title": "Reconfigure SpotOracle",
-        "description": "Update SpotOracle settings. Existing prices history is preserved.",
+        "description": "Update SpotOracle settings. Existing price history is preserved.",
         "data": {
           "api_key": "Fingrid API key",
           "price_sensor": "Source price sensor",
-          "floor_sensor": "Current price sensor for floor calibration (optional)"
+          "floor_sensor": "Current price sensor for floor calibration"
         },
         "data_description": {
-          "floor_sensor": "Optional. If set, the lower bound for predicted prices is derived from this sensor's long-term statistics (5th percentile of hourly minimums over the past 30 days). Leave blank to disable floor clipping. Its unit_of_measurement must match the source price sensor."
+          "floor_sensor": "Required. Pick a sensor that records your effective current electricity price (state_class: measurement). The integration uses its long-term statistics to set a lower bound for predicted prices (5th percentile of hourly minimums over the past 30 days). Its unit_of_measurement must match the source price sensor."
         }
       }
     },
