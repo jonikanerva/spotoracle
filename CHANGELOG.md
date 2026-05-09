@@ -6,15 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-09
+
+First stable release. The integration has been running in production
+since v0.7.2 with no behaviour regressions; 1.0.0 marks the API and
+contract as stable.
+
 ### Added
 - `CHANGELOG.md` — historical and forward-looking release notes.
-- GitHub Actions CI workflow: `py_compile`, unit tests, JSON validation on
-  every pull request and push to `main`.
+- GitHub Actions CI workflow: `py_compile`, pytest, JSON validation on
+  every pull request and push to `main`. CI runs on Python 3.13 (the
+  minimum Home Assistant Core 2026.x supports).
+- Pytest-based test coverage for the I/O layer:
+  `tests/test_coordinator.py` (14 tests covering Fingrid HTTP success
+  and error paths, dataset splitting, floor-from-LTS percentile math,
+  cache TTL, end-to-end setup) and `tests/test_config_flow.py` (8 tests
+  covering the user flow, reconfigure flow, and validation rules).
+  Test count: 19 → 41.
+- `requirements_test.txt` pinning `pytest-homeassistant-custom-component`
+  exactly. Test-only — runtime still declares zero Python dependencies.
 
 ### Changed
 - `README.md` "Fees and transmission tariffs" no longer promises a future
-  hour-of-day bias correction; the limitation is now documented as a
-  current behaviour.
+  hour-of-day bias correction; the limitation is now documented as
+  current behaviour. If you need tariff-aware pricing, encode the
+  time-of-day rates into the source sensor itself (e.g. via a template
+  sensor) so the forecast inherits them.
+- `CLAUDE.md` release process now mandates a `CHANGELOG.md` rotation as
+  part of every release branch.
 
 ## [0.7.2] - 2026
 
@@ -107,7 +126,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jonikanerva/spotoracle/compare/v0.7.2...v1.0.0
 [0.7.2]: https://github.com/jonikanerva/spotoracle/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/jonikanerva/spotoracle/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/jonikanerva/spotoracle/compare/v0.6.0...v0.7.0
