@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jonikanerva/spotoracle/main/icon.png" alt="SpotOracle" width="128" height="128"/>
+  <img src="https://raw.githubusercontent.com/jonikanerva/spotoracle/main/icons/icon.png" alt="SpotOracle" width="128" height="128"/>
 </p>
 
 # SpotOracle
@@ -201,10 +201,10 @@ The card shows **today's early morning → 3 days ahead** as color-coded bars. G
 
 ## HACS icon visibility
 
-The `icon.png` at the root of this repo is **not picked up automatically** by HACS in the integration listing — HACS reads icons from the official [`home-assistant/brands`](https://github.com/home-assistant/brands) repository. To get the icon shown in the HACS listing, open a pull request against Brands that adds:
+The icons under `icons/` in this repo are **not picked up automatically** by HACS in the integration listing — HACS reads icons from the official [`home-assistant/brands`](https://github.com/home-assistant/brands) repository. To get the icon shown in the HACS listing, open a pull request against Brands that adds:
 
-- `custom_integrations/spotoracle/icon.png` (256×256, this repo's `icon.png`).
-- `custom_integrations/spotoracle/icon@2x.png` (512×512, this repo's `icon@2x.png`).
+- `custom_integrations/spotoracle/icon.png` (256×256, this repo's `icons/icon.png`).
+- `custom_integrations/spotoracle/icon@2x.png` (512×512, this repo's `icons/icon@2x.png`).
 
 Instructions: <https://github.com/home-assistant/brands/blob/master/README.md>. Approval usually takes a few days. While waiting, HACS shows the default icon, but the integration works normally otherwise.
 
