@@ -42,7 +42,7 @@ The forecast unit is inherited from the source sensor's `unit_of_measurement` at
 
 The regression fits coefficients directly against the source sensor's values, so the forecast **automatically inherits the same fees** as the source sensor. If your sensor already exposes a "total price" (including transmission, margin, taxes), the forecast is a total-price forecast. If your sensor is pure spot, the forecast is pure spot.
 
-**Limitation**: if the fee structure has clear time-of-day dependence (e.g. night tariff 22–07 / day tariff 07–22), linear regression absorbs only the average — individual night hours can be off by 1–3 c/kWh due to mean bias. Sufficient for most automations; an hour-of-day bias correction is planned for a later release.
+**Limitation**: if the fee structure has clear time-of-day dependence (e.g. night tariff 22–07 / day tariff 07–22), the linear regression absorbs only the average — individual night hours can be off by 1–3 c/kWh due to mean bias. This is sufficient for most automations. If you need tariff-aware pricing, encode the time-of-day rates into the source sensor itself (e.g. via a template sensor) so the forecast inherits them.
 
 ## Prediction floor (required)
 
