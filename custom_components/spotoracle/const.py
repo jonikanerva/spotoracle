@@ -5,6 +5,7 @@ DOMAIN = "spotoracle"
 
 CONF_API_KEY = "api_key"
 CONF_PRICE_SENSOR = "price_sensor"
+CONF_FLOOR_SENSOR = "floor_sensor"
 
 UPDATE_INTERVAL = timedelta(minutes=30)
 
@@ -21,5 +22,15 @@ MIN_FIT_SAMPLES = 24             # quarters; 24 × 15 min = 6h minimum overlap
 
 DEFAULT_SLOPE = 0.0020       # snt/kWh per MW residual
 DEFAULT_INTERCEPT = -2.0     # snt/kWh
+
+# Optional prediction floor: derived from a user-supplied "current price" sensor's
+# long-term statistics. The 5th percentile of hourly minimums over the last 30 days
+# acts as a robust lower bound, preventing OLS extrapolation past the observed price
+# range. A 30-day rolling window tracks Finnish seasonal price variation (winter
+# 10–30+ snt vs. summer 1–8 snt); longer windows would mix seasons and over-floor
+# in spring. Without the optional sensor configured, no clipping is applied.
+FLOOR_HISTORY_DAYS = 30
+FLOOR_PERCENTILE = 5
+FLOOR_REFRESH_INTERVAL = timedelta(hours=24)
 
 SENSOR_FORECAST = "forecast"
