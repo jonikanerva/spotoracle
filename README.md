@@ -63,6 +63,8 @@ The regression fits coefficients directly against the source sensor's values, so
 | `fit_used_default`              | `true` if overlap < 24 quarters (= 6h) and fallback default coefficients were used.                                                                                           |
 | `consumption_extended_quarters` | Number of 15-min quarters where the consumption forecast was extrapolated from last week's actuals (0 if not needed).                                                         |
 | `wind_extended_quarters`        | Number of 15-min quarters where the wind power forecast was extrapolated from last week's actuals (0 if not needed).                                                          |
+| `filled_quarters`               | Number of quarters that were forward-filled from the most recent predicted value (data thinning, not a hard outage). Normally 0.                                              |
+| `zero_seeded_quarters`          | Number of quarters that fell back to `0.0` because neither actual nor predicted data was available (hard outage). If > 0, check Fingrid connectivity and the source sensor.   |
 | `generated_at`                  | UTC timestamp marking when the forecast was computed.                                                                                                                         |
 
 ## Technical notes

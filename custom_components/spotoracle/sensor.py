@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, SENSOR_FORECAST
 from .coordinator import SpotOracleCoordinator
-from .predictor import _quarter_key
+from .predictor import quarter_key
 
 DEFAULT_UNIT = "snt/kWh"
 
@@ -52,7 +52,7 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
     def _current_point(self) -> dict | None:
         if not self._series:
             return None
-        key = _quarter_key(datetime.now(timezone.utc))
+        key = quarter_key(datetime.now(timezone.utc))
         return next(
             (s for s in self._series if s["start"] == key),
             self._series[0],
@@ -75,6 +75,8 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
             "fit_used_default": d.get("fit_used_default", True),
             "consumption_extended_quarters": d.get("consumption_extended_quarters", 0),
             "wind_extended_quarters": d.get("wind_extended_quarters", 0),
+            "filled_quarters": d.get("filled_quarters", 0),
+            "zero_seeded_quarters": d.get("zero_seeded_quarters", 0),
             "generated_at": d.get("generated_at"),
         }
         if point:
