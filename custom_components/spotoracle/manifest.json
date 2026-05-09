@@ -1,12 +1,13 @@
 {
   "domain": "spotoracle",
   "name": "SpotOracle",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "documentation": "https://github.com/jonikanerva/spotoracle",
   "issue_tracker": "https://github.com/jonikanerva/spotoracle/issues",
   "codeowners": ["@jonikanerva"],
   "config_flow": true,
   "iot_class": "cloud_polling",
   "requirements": [],
-  "dependencies": []
+  "dependencies": [],
+  "after_dependencies": ["recorder"]
 }

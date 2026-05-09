@@ -6,7 +6,23 @@
         "description": "Valitse Nord Pool -tyyppinen hintasensori (jonka attribuutissa 'prices' on lista [{start, price}, ...]) ja anna Fingrid Avoindata -API-avain.",
         "data": {
           "api_key": "Fingrid API-avain",
-          "price_sensor": "Lähde-hintasensori"
+          "price_sensor": "Lähde-hintasensori",
+          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan (valinnainen)"
+        },
+        "data_description": {
+          "floor_sensor": "Valinnainen. Jos asetettu, ennustehintojen alarajaksi otetaan tämän sensorin pitkän aikavälin tilastoista (LTS) tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä. Käytä sensoria joka tallentaa nykyhintasi ja jolla on state_class: measurement. Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
+        }
+      },
+      "reconfigure": {
+        "title": "SpotOraclen uudelleenkonfigurointi",
+        "description": "Päivitä SpotOraclen asetukset. Olemassa oleva hintahistoria säilyy.",
+        "data": {
+          "api_key": "Fingrid API-avain",
+          "price_sensor": "Lähde-hintasensori",
+          "floor_sensor": "Nykyhintasensori lattia-arvon laskentaan (valinnainen)"
+        },
+        "data_description": {
+          "floor_sensor": "Valinnainen. Jos asetettu, ennustehintojen alarajaksi otetaan tämän sensorin pitkän aikavälin tilastoista (LTS) tuntiminimien 5. prosenttipiste viimeiseltä 30 päivältä. Jätä tyhjäksi poistaaksesi lattia-rajauksen käytöstä. Yksikön (unit_of_measurement) on oltava sama kuin lähde-hintasensorilla."
         }
       }
     },
@@ -14,7 +30,8 @@
       "required": "Pakollinen kenttä.",
       "entity_not_found": "Sensoria ei löytynyt.",
       "invalid_attributes": "Sensorilla ei ole 'prices'-listaattribuuttia.",
-      "invalid_api_key": "Virheellinen API-avain — Fingrid ei hyväksynyt tunnistetta."
+      "invalid_api_key": "Virheellinen API-avain — Fingrid ei hyväksynyt tunnistetta.",
+      "unit_mismatch": "Lattiasensorin yksikön on oltava sama kuin hintasensorin."
     },
     "abort": {
       "single_instance_allowed": "Vain yksi instanssi sallittu."

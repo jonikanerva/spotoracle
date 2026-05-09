@@ -222,5 +222,115 @@ class TestFillStatsEmptyInput(unittest.TestCase):
             self.assertEqual(point["source"], "predicted")
 
 
+class TestPredictionFloor(unittest.TestCase):
+    """Floor clipping prevents OLS extrapolation past the observed price range.
+
+    Setup: 4-day series with a varied consumption forecast that produces
+    distinct predicted residual buckets, pairing with Nord Pool prices that
+    cover only day 0. The 96 overlap quarters all carry price=4.0 and
+    residual=8000, which has zero variance → fit falls back to
+    `fit_used_default=True` with default slope=0.002, intercept=-2.0.
+
+    With those defaults, future predictions per residual:
+      day 0 — residual 8000 → price 14.0 (covered by Nord Pool, not predicted)
+      day 1 — residual 8000 → predicted 14.0 (above any floor in tests)
+      day 2 — residual 3000 → predicted 4.0  (below floor 5.0)
+      day 3 — residual 1000 → predicted 0.0  (below floor 5.0)
+    """
+
+    def setUp(self) -> None:
+        self.series_start = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
+        self.series_end = self.series_start + timedelta(days=4)
+        self.history_start = self.series_start - timedelta(days=8)
+
+        cons_d0 = _make_quarter_records(self.series_start, 96, value=10000.0)
+        cons_d1 = _make_quarter_records(
+            self.series_start + timedelta(days=1), 96, value=10000.0
+        )
+        cons_d2 = _make_quarter_records(
+            self.series_start + timedelta(days=2), 96, value=5000.0
+        )
+        cons_d3 = _make_quarter_records(
+            self.series_start + timedelta(days=3), 96, value=3000.0
+        )
+        self.consumption_forecast = cons_d0 + cons_d1 + cons_d2 + cons_d3
+        self.wind_forecast = _make_quarter_records(
+            self.series_start, 4 * 96, value=2000.0
+        )
+
+        actual_span_quarters = (8 + 4) * 96
+        self.consumption_actual_hourly = _make_hourly_records(
+            self.history_start, (8 + 4) * 24, value=10000.0
+        )
+        self.wind_actual = _make_quarter_records(
+            self.history_start, actual_span_quarters, value=2000.0
+        )
+        self.nordpool_prices = _make_price_entries(self.series_start, 96, value=4.0)
+
+    def _build(self, floor: float | None = None) -> dict:
+        return build_forecast(
+            nordpool_prices=self.nordpool_prices,
+            wind_records=self.wind_forecast,
+            wind_actual_records=self.wind_actual,
+            consumption_forecast_records=self.consumption_forecast,
+            consumption_actual_records=self.consumption_actual_hourly,
+            series_start=self.series_start,
+            series_end=self.series_end,
+            default_slope=0.002,
+            default_intercept=-2.0,
+            min_fit_samples=24,
+            floor=floor,
+        )
+
+    def test_floor_none_leaves_predictions_unchanged(self) -> None:
+        result = self._build(floor=None)
+        self.assertIsNone(result["prediction_floor"])
+        self.assertEqual(result["prediction_floor_clipped_quarters"], 0)
+        # Day 3 predictions reach 0.0 unmodified.
+        day3_predicted = [
+            p
+            for p in result["series"]
+            if p["source"] == "predicted" and p["start"].startswith("2026-05-11")
+        ]
+        self.assertTrue(day3_predicted, "expected day 3 predictions in series")
+        self.assertTrue(
+            all(p["price"] == 0.0 for p in day3_predicted),
+            "day 3 predictions should be 0.0 without a floor",
+        )
+
+    def test_floor_clips_low_predictions_only(self) -> None:
+        result = self._build(floor=5.0)
+        self.assertEqual(result["prediction_floor"], 5.0)
+        predicted = [p for p in result["series"] if p["source"] == "predicted"]
+        for point in predicted:
+            self.assertGreaterEqual(
+                point["price"],
+                5.0,
+                f"Predicted point {point} dropped below floor 5.0",
+            )
+        # Day 1 predicted (residual 8000) keeps its 14.0 — above the floor.
+        day1_predicted = [
+            p for p in predicted if p["start"].startswith("2026-05-09")
+        ]
+        self.assertTrue(day1_predicted)
+        self.assertTrue(all(p["price"] == 14.0 for p in day1_predicted))
+
+    def test_prediction_floor_clipped_quarters_count(self) -> None:
+        result = self._build(floor=5.0)
+        # predict_series output covers all 4 days (residual exists for each).
+        # Days 2 and 3 fall below floor 5.0 → 96 + 96 = 192 clipped quarters.
+        # Day 0 prediction is also 14.0 (above floor) but is overridden by
+        # Nord Pool source; it is not counted as clipped.
+        self.assertEqual(result["prediction_floor_clipped_quarters"], 192)
+
+    def test_floor_works_with_default_fit_fallback(self) -> None:
+        result = self._build(floor=5.0)
+        self.assertTrue(
+            result["fit_used_default"],
+            "test setup is supposed to force fit_used_default=True",
+        )
+        self.assertGreater(result["prediction_floor_clipped_quarters"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

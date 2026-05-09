@@ -67,6 +67,7 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
     def extra_state_attributes(self) -> dict:
         d = self.coordinator.data or {}
         point = self._current_point
+        floor = d.get("prediction_floor")
         attrs = {
             "forecast": self._series,
             "slope": round(d.get("slope", 0.0), 6),
@@ -77,6 +78,10 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
             "wind_extended_quarters": d.get("wind_extended_quarters", 0),
             "filled_quarters": d.get("filled_quarters", 0),
             "zero_seeded_quarters": d.get("zero_seeded_quarters", 0),
+            "prediction_floor": round(floor, 3) if floor is not None else None,
+            "prediction_floor_clipped_quarters": d.get(
+                "prediction_floor_clipped_quarters", 0
+            ),
             "generated_at": d.get("generated_at"),
         }
         if point:

@@ -44,6 +44,18 @@ The regression fits coefficients directly against the source sensor's values, so
 
 **Limitation**: if the fee structure has clear time-of-day dependence (e.g. night tariff 22–07 / day tariff 07–22), linear regression absorbs only the average — individual night hours can be off by 1–3 c/kWh due to mean bias. Sufficient for most automations; an hour-of-day bias correction is planned for a later release.
 
+## Optional: prediction floor
+
+The OLS regression is linear and has no built-in lower bound. When wind generation is high and consumption is low (typical windy night), the linear fit can extrapolate predicted prices to zero or below — physically impossible for any consumer who pays transmission fees, taxes, or VAT.
+
+To prevent this, you can configure a second sensor in the integration setup: **Current price sensor for floor calibration**. Pick a sensor that records your effective current electricity price (e.g. `sensor.nordpool_price_now_with_fees_snt_kwh`), with `state_class: measurement` so Home Assistant captures it into long-term statistics.
+
+Once configured, the integration queries the sensor's hourly statistics from the last 30 days, takes the **5th percentile of the hourly minimums** as the floor, and clips any predicted quarter that would fall below this value. The 30-day rolling window naturally tracks Finnish seasonal price variation (winter prices ≫ summer prices); the 5th percentile filters out single-point measurement glitches.
+
+The floor is recomputed every 24 hours. Without this optional sensor, behaviour is identical to v0.7.0 — predictions can extend to whatever the linear model produces.
+
+The floor sensor's `unit_of_measurement` must match the source price sensor's; the config flow rejects mismatched units to prevent silently distorted floors.
+
 ## Installation (HACS)
 
 1. Open **HACS** → ⋮ → **Custom repositories**.
@@ -65,6 +77,8 @@ The regression fits coefficients directly against the source sensor's values, so
 | `wind_extended_quarters`        | Number of 15-min quarters where the wind power forecast was extrapolated from last week's actuals (0 if not needed).                                                          |
 | `filled_quarters`               | Number of quarters that were forward-filled from the most recent predicted value (data thinning, not a hard outage). Normally 0.                                              |
 | `zero_seeded_quarters`          | Number of quarters that fell back to `0.0` because neither actual nor predicted data was available (hard outage). If > 0, check Fingrid connectivity and the source sensor.   |
+| `prediction_floor`              | Lower bound applied to predicted prices (5th percentile of the floor sensor's hourly minimums over the last 30 days). `null` if no floor sensor is configured.                |
+| `prediction_floor_clipped_quarters` | Number of predicted quarters whose value was clipped up to `prediction_floor`. 0 if no floor is in effect or if no quarters fell below it.                                |
 | `generated_at`                  | UTC timestamp marking when the forecast was computed.                                                                                                                         |
 
 ## Technical notes

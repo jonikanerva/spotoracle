@@ -138,9 +138,10 @@ Sandbox restrictions: GPG signing and SSH push need `dangerouslyDisableSandbox: 
 - All keys in `predictor.py` dicts are **ISO8601 UTC strings** floored to the 15-min quarter boundary (`_quarter_key`). Mixing local and UTC will silently fail.
 - The forecast output **inherits its unit** from the source price sensor's `unit_of_measurement` attribute (c/kWh, EUR/MWh — whatever the user has). Never hardcode a unit in `sensor.py`.
 - `MIN_FIT_SAMPLES` is in **quarters**, not hours. 24 quarters = 6h overlap. If you change the resolution again, change this together.
-- Diagnostic attributes on the sensor (`slope`, `intercept`, `fit_samples`, `fit_used_default`, `consumption_extended_quarters`, `wind_extended_quarters`, `generated_at`) are intentional debugging surface — keep them.
+- Diagnostic attributes on the sensor (`slope`, `intercept`, `fit_samples`, `fit_used_default`, `consumption_extended_quarters`, `wind_extended_quarters`, `prediction_floor`, `prediction_floor_clipped_quarters`, `generated_at`) are intentional debugging surface — keep them.
 - `extend_with_last_week` is a **deliberate approximation**, not a hidden ML model. Finnish electricity consumption has a strong weekly cycle, so copying same-weekday-same-quarter from 7 days ago is good enough for the 25–96h tail. Document any future replacement (e.g. multi-week mean, seasonal model) as such.
 - `merge_actual_and_predicted` is contractual: returns exactly `num_quarters` entries in chronological order, no gaps, no null prices. Forward-fill from the most recent predicted value when both `actual` and `predicted` miss a quarter.
+- `build_forecast` accepts an optional `floor: float | None` (computed by the I/O boundary in `coordinator.py` from the user's LTS-recorded "current price" sensor). When provided, predicted-source quarters with `slope · residual + intercept < floor` are clipped up to `floor`. Actual (`nordpool`) prices are never clipped. Predictor stays HA-import-free; the floor flows in as a plain number.
 
 ## Out of scope (don't do these)
 
