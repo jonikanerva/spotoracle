@@ -106,9 +106,10 @@ from predictor import build_forecast
 
 ## Git Workflow
 
-- Direct commits to `main` are fine for small fixes (this is a solo project).
-- Use a feature branch + merge only when: a) the change spans multiple releases, or b) you have in-progress work that should not be visible on `main`.
-- Tag (`vX.Y.Z`) only after `manifest.json` `version` has been bumped in the same commit.
+- **Releases must go through a feature branch + GitHub pull request.** Any change that bumps `custom_components/spotoracle/manifest.json` `version` lands on a `release/vX.Y.Z` branch, is pushed to origin, and is merged via `gh pr create` → review → merge. Never bump `version` directly on `main`.
+- Direct commits to `main` are fine for small non-version fixes (typos, comment cleanup, README clarifications, etc.).
+- Use a feature branch + merge also when: a) the change spans multiple releases, or b) you have in-progress work that should not be visible on `main`.
+- Tag (`vX.Y.Z`) only after the release PR has been merged into `main`.
 - **Never force-push to `main`. Never commit secrets or credentials.**
 
 ## Release process
@@ -117,12 +118,15 @@ HACS shows commit hashes ("Installed version e04e229", "Latest version 04f7aa5")
 
 Order of operations every release:
 
-1. Bump `custom_components/spotoracle/manifest.json` `version` to the new value.
-2. Update `README.md` if user-visible attributes / behaviour changed.
-3. `git commit` (let GPG signing happen — this requires `dangerouslyDisableSandbox: true` because gpg-agent needs `~/.gnupg/`).
-4. `git push origin main`
-5. `git tag vX.Y.Z && git push origin vX.Y.Z`
-6. **`gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."`** ← this is the step that surfaces the version in HACS.
+1. Create a release branch: `git checkout -b release/vX.Y.Z`.
+2. Bump `custom_components/spotoracle/manifest.json` `version` to the new value.
+3. Update `README.md` if user-visible attributes / behaviour changed.
+4. `git commit` (let GPG signing happen — this requires `dangerouslyDisableSandbox: true` because gpg-agent needs `~/.gnupg/`).
+5. `git push -u origin release/vX.Y.Z`
+6. Open the PR: `gh pr create --title "vX.Y.Z: ..." --body "..."`. Review, then merge.
+7. After merge: `git checkout main && git pull --ff-only`.
+8. `git tag vX.Y.Z && git push origin vX.Y.Z`.
+9. **`gh release create vX.Y.Z --repo jonikanerva/spotoracle --title "..." --notes "..."`** ← this is the step that surfaces the version in HACS.
 
 The user (`@jonikanerva`) is the codeowner; SSH for git and `gh` for releases are both authenticated as them on this machine.
 

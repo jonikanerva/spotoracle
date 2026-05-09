@@ -27,6 +27,11 @@ def _quarter_key(dt: datetime) -> str:
     return _quarter_floor(dt).isoformat()
 
 
+# Public alias: external callers (e.g. sensor.py picking the current point)
+# should not depend on the underscored internal name.
+quarter_key = _quarter_key
+
+
 def bucket_records(records: Iterable[dict]) -> dict[str, float]:
     """Bucket records by 15-min quarter. If multiple samples land in the same
     quarter (e.g. accidental higher-resolution input), take the mean.
@@ -35,6 +40,9 @@ def bucket_records(records: Iterable[dict]) -> dict[str, float]:
     """
     buckets: dict[str, list[float]] = {}
     for r in records:
+        if not isinstance(r, dict):
+            _LOGGER.debug("Skipping non-dict record: %s", r)
+            continue
         start = r.get("startTime") or r.get("start_time") or r.get("start")
         val = r.get("value")
         if start is None or val is None:
@@ -58,6 +66,9 @@ def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
     """
     buckets: dict[str, list[float]] = {}
     for p in prices:
+        if not isinstance(p, dict):
+            _LOGGER.debug("Skipping non-dict price record: %s", p)
+            continue
         start = p.get("start") or p.get("startTime")
         if "price" in p:
             price = p["price"]
@@ -85,6 +96,9 @@ def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float
     """
     out: dict[str, float] = {}
     for r in hourly_records:
+        if not isinstance(r, dict):
+            _LOGGER.debug("Skipping non-dict hourly record: %s", r)
+            continue
         start = r.get("startTime") or r.get("start_time") or r.get("start")
         val = r.get("value")
         if start is None or val is None:
@@ -160,7 +174,7 @@ def merge_actual_and_predicted(
     predicted: dict[str, float],
     series_start: datetime,
     num_quarters: int,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, int]]:
     """Build a quarter-by-quarter list for [series_start, series_start + num_quarters * 15min).
 
     series_start is normally aligned to the start of the local day so the chart
@@ -171,6 +185,13 @@ def merge_actual_and_predicted(
     quarter, forward-fill from the most recent predicted value. If the very
     first quarters have no predicted data either, look ahead for the first
     available predicted value to seed the fill.
+
+    Returns `(series, stats)` where `stats` is a dict with:
+      - `filled_quarters`: how many quarters were forward-filled from a
+        previous predicted value (data thinning, not a hard outage).
+      - `zero_seeded_quarters`: how many quarters fell back to 0.0 because
+        neither actual nor any predicted value was available (hard outage —
+        if > 0, surface this to the user via a sensor attribute).
     """
     keys = [(series_start + timedelta(minutes=15 * i)).isoformat() for i in range(num_quarters)]
 
@@ -182,6 +203,8 @@ def merge_actual_and_predicted(
 
     out: list[dict] = []
     last_predicted: float | None = seed
+    filled_quarters = 0
+    zero_seeded_quarters = 0
     for key in keys:
         if key in actual:
             out.append({"start": key, "price": round(actual[key], 3), "source": "nordpool"})
@@ -192,9 +215,15 @@ def merge_actual_and_predicted(
             continue
         if last_predicted is not None:
             out.append({"start": key, "price": round(last_predicted, 3), "source": "predicted"})
+            filled_quarters += 1
             continue
         out.append({"start": key, "price": 0.0, "source": "predicted"})
-    return out
+        zero_seeded_quarters += 1
+    stats = {
+        "filled_quarters": filled_quarters,
+        "zero_seeded_quarters": zero_seeded_quarters,
+    }
+    return out, stats
 
 
 def build_forecast(
@@ -245,7 +274,7 @@ def build_forecast(
     predicted = predict_series(residual, a, b)
 
     num_quarters = max(0, int((series_end - series_start).total_seconds() // 900))
-    series = merge_actual_and_predicted(
+    series, fill_stats = merge_actual_and_predicted(
         actual_prices, predicted, series_start, num_quarters
     )
 
@@ -257,4 +286,6 @@ def build_forecast(
         "fit_used_default": used_default,
         "consumption_extended_quarters": len(cons_q_extended) - len(cons_q),
         "wind_extended_quarters": len(wind_q_extended) - len(wind_q),
+        "filled_quarters": fill_stats["filled_quarters"],
+        "zero_seeded_quarters": fill_stats["zero_seeded_quarters"],
     }

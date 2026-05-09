@@ -15,13 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "custom_componen
 from predictor import (  # noqa: E402  (sys.path tweak above)
     bucket_records,
     build_forecast,
+    expand_hourly_to_quarters,
     parse_price_sensor_attributes,
+    quarter_key,
 )
-
-
-def _quarter_key(dt: datetime) -> str:
-    minute = (dt.minute // 15) * 15
-    return dt.replace(minute=minute, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
 
 
 def _make_quarter_records(start: datetime, count: int, value: float) -> list[dict]:
@@ -54,6 +51,21 @@ def _make_price_entries(start: datetime, count: int, value: float) -> list[dict]
     ]
 
 
+class TestQuarterKey(unittest.TestCase):
+    def test_floors_to_15min_boundary(self) -> None:
+        cases = [
+            (datetime(2026, 5, 8, 12, 0, tzinfo=timezone.utc), "2026-05-08T12:00:00+00:00"),
+            (datetime(2026, 5, 8, 12, 7, tzinfo=timezone.utc), "2026-05-08T12:00:00+00:00"),
+            (datetime(2026, 5, 8, 12, 14, tzinfo=timezone.utc), "2026-05-08T12:00:00+00:00"),
+            (datetime(2026, 5, 8, 12, 15, tzinfo=timezone.utc), "2026-05-08T12:15:00+00:00"),
+            (datetime(2026, 5, 8, 12, 23, tzinfo=timezone.utc), "2026-05-08T12:15:00+00:00"),
+            (datetime(2026, 5, 8, 12, 59, tzinfo=timezone.utc), "2026-05-08T12:45:00+00:00"),
+        ]
+        for dt, expected in cases:
+            with self.subTest(dt=dt):
+                self.assertEqual(quarter_key(dt), expected)
+
+
 class TestPriceSensorParsing(unittest.TestCase):
     def test_zero_price_is_preserved(self) -> None:
         prices = [{"start": "2026-05-08T00:00:00+00:00", "price": 0.0}]
@@ -84,6 +96,32 @@ class TestMalformedRecords(unittest.TestCase):
         result = bucket_records(records)
         self.assertEqual(len(result), 1)
         self.assertEqual(list(result.values())[0], 42.0)
+
+
+class TestNonDictRecords(unittest.TestCase):
+    def test_string_in_price_list_is_skipped(self) -> None:
+        prices = ["bad", {"start": "2026-05-08T00:00:00+00:00", "price": 4.21}]
+        result = parse_price_sensor_attributes(prices)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(list(result.values())[0], 4.21)
+
+    def test_string_in_records_is_skipped(self) -> None:
+        records = ["bad", {"startTime": "2026-05-08T00:00:00Z", "value": 100}]
+        result = bucket_records(records)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(list(result.values())[0], 100.0)
+
+    def test_string_in_hourly_records_is_skipped(self) -> None:
+        records = ["bad", {"startTime": "2026-05-08T00:00:00Z", "value": 50}]
+        result = expand_hourly_to_quarters(records)
+        # Hourly expansion creates 4 quarters per valid record.
+        self.assertEqual(len(result), 4)
+
+    def test_only_invalid_items_yields_empty(self) -> None:
+        garbage = ["a", 1, None, [], 3.14]
+        self.assertEqual(parse_price_sensor_attributes(garbage), {})
+        self.assertEqual(bucket_records(garbage), {})
+        self.assertEqual(expand_hourly_to_quarters(garbage), {})
 
 
 class TestBuildForecastInvariants(unittest.TestCase):
@@ -149,6 +187,39 @@ class TestBuildForecastInvariants(unittest.TestCase):
         self.assertTrue(result["fit_used_default"])
         self.assertAlmostEqual(result["slope"], 0.002)
         self.assertAlmostEqual(result["intercept"], -2.0)
+
+    def test_full_coverage_yields_zero_fill_stats(self) -> None:
+        result = self._build()
+        self.assertEqual(result["filled_quarters"], 0)
+        self.assertEqual(result["zero_seeded_quarters"], 0)
+
+
+class TestFillStatsEmptyInput(unittest.TestCase):
+    """Hard outage: nothing from Fingrid, nothing from the price sensor."""
+
+    def setUp(self) -> None:
+        self.series_start = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
+        self.series_end = self.series_start + timedelta(days=4)
+
+    def test_completely_empty_input_yields_zero_seeded_full_series(self) -> None:
+        result = build_forecast(
+            nordpool_prices=[],
+            wind_records=[],
+            wind_actual_records=[],
+            consumption_forecast_records=[],
+            consumption_actual_records=[],
+            series_start=self.series_start,
+            series_end=self.series_end,
+            default_slope=0.002,
+            default_intercept=-2.0,
+            min_fit_samples=24,
+        )
+        self.assertEqual(len(result["series"]), 384)
+        self.assertEqual(result["zero_seeded_quarters"], 384)
+        self.assertEqual(result["filled_quarters"], 0)
+        for point in result["series"]:
+            self.assertEqual(point["price"], 0.0)
+            self.assertEqual(point["source"], "predicted")
 
 
 if __name__ == "__main__":
