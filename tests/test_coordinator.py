@@ -216,9 +216,11 @@ async def test_floor_recorder_failure_returns_none(
     assert floor is None
 
 
-async def test_floor_no_lts_history_returns_none(
+async def test_floor_empty_lts_history_returns_none(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
+    """When the recorder returns no rows, _compute_floor_from_lts must
+    short-circuit to None before the percentile math runs."""
     _set_price_sensor(hass)
     aioclient_mock.get(f"{FINGRID_API_BASE}/data", json=_empty_fingrid_payload())
     entry = _make_entry()
@@ -226,14 +228,15 @@ async def test_floor_no_lts_history_returns_none(
 
     coordinator = SpotOracleCoordinator(hass, entry)
 
-    async def _stub_compute(self):
-        # Bypass the recorder layer entirely; equivalent to "no LTS rows".
-        return None
+    class _EmptyRecorder:
+        async def async_add_executor_job(self, _func, *_args):
+            return {FLOOR_SENSOR: []}
 
-    with patch.object(
-        SpotOracleCoordinator, "_compute_floor_from_lts", _stub_compute
+    with patch(
+        "custom_components.spotoracle.coordinator.get_instance",
+        return_value=_EmptyRecorder(),
     ):
-        floor = await coordinator._resolve_floor()
+        floor = await coordinator._compute_floor_from_lts()
     assert floor is None
 
 
