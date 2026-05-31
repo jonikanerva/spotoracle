@@ -65,25 +65,19 @@ class SpotOracleForecastSensor(CoordinatorEntity[SpotOracleCoordinator], SensorE
 
     @property
     def extra_state_attributes(self) -> dict:
+        # User-facing surface is intentionally minimal: the forecast itself,
+        # when it was generated, and a single trust signal. `degraded` is True
+        # when the price model fell back to default coefficients (uncalibrated)
+        # or any quarter had no data (zero-filled) — the only states where the
+        # forecast should not be trusted. Full numeric diagnostics (slope,
+        # intercept, fit_samples, floor, extension counts) stay in the
+        # coordinator's debug log, not on the entity.
         d = self.coordinator.data or {}
-        point = self._current_point
-        floor = d.get("prediction_floor")
-        attrs = {
+        degraded = bool(
+            d.get("fit_used_default", True) or d.get("zero_seeded_quarters", 0) > 0
+        )
+        return {
             "forecast": self._series,
-            "slope": round(d.get("slope", 0.0), 6),
-            "intercept": round(d.get("intercept", 0.0), 3),
-            "fit_samples": d.get("fit_samples", 0),
-            "fit_used_default": d.get("fit_used_default", True),
-            "consumption_extended_quarters": d.get("consumption_extended_quarters", 0),
-            "wind_extended_quarters": d.get("wind_extended_quarters", 0),
-            "filled_quarters": d.get("filled_quarters", 0),
-            "zero_seeded_quarters": d.get("zero_seeded_quarters", 0),
-            "prediction_floor": round(floor, 3) if floor is not None else None,
-            "prediction_floor_clipped_quarters": d.get(
-                "prediction_floor_clipped_quarters", 0
-            ),
             "generated_at": d.get("generated_at"),
+            "degraded": degraded,
         }
-        if point:
-            attrs["source"] = point.get("source")
-        return attrs

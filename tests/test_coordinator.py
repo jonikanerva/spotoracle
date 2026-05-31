@@ -75,9 +75,46 @@ async def test_fetch_success_returns_full_forecast(
     result = await coordinator._async_update_data()
 
     assert "series" in result
-    assert len(result["series"]) == 384
+    assert len(result["series"]) == 288  # fixed 3-day predicted window
     assert "generated_at" in result
-    assert all("start" in q and "price" in q and "source" in q for q in result["series"])
+    # Predicted-only entries are exactly {start, price} — no source field.
+    assert all(set(q) == {"start", "price"} for q in result["series"])
+
+
+async def test_series_starts_after_last_published_price(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The source sensor publishes through 2026-05-09 00:15+03:00 (= 21:15Z).
+    The forecast must begin one quarter later and never include a published
+    quarter, for a fixed 3-day (288-quarter) window."""
+    _set_price_sensor(hass)  # prices end at 00:15+03:00 = 2026-05-08T21:15Z
+    aioclient_mock.get(f"{FINGRID_API_BASE}/data", json=_empty_fingrid_payload())
+    entry = _make_entry(floor_sensor=None)
+    entry.add_to_hass(hass)
+
+    coordinator = SpotOracleCoordinator(hass, entry)
+    result = await coordinator._async_update_data()
+
+    assert len(result["series"]) == 288
+    assert result["series"][0]["start"] == "2026-05-08T21:30:00+00:00"
+    assert all(set(q) == {"start", "price"} for q in result["series"])
+
+
+async def test_no_published_prices_falls_back_to_local_midnight(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """An empty price list must not crash: predict a full window from local
+    midnight today instead of raising."""
+    _set_price_sensor(hass, prices=[])
+    aioclient_mock.get(f"{FINGRID_API_BASE}/data", json=_empty_fingrid_payload())
+    entry = _make_entry(floor_sensor=None)
+    entry.add_to_hass(hass)
+
+    coordinator = SpotOracleCoordinator(hass, entry)
+    result = await coordinator._async_update_data()
+
+    assert len(result["series"]) == 288
+    assert all(set(q) == {"start", "price"} for q in result["series"])
 
 
 async def test_fetch_auth_failure_raises_update_failed(
@@ -311,8 +348,16 @@ async def test_full_setup_creates_sensor(
     state = hass.states.get(f"sensor.spotoracle_forecast")
     assert state is not None
     assert state.attributes.get("forecast") is not None
-    assert len(state.attributes["forecast"]) == 384
+    assert len(state.attributes["forecast"]) == 288
     assert state.attributes.get("unit_of_measurement") == "c/kWh"
+    # v2.0 minimal attribute surface: forecast, generated_at, degraded only.
+    assert "generated_at" in state.attributes
+    assert "degraded" in state.attributes
+    # No Fingrid data + no model fit in this setup → forecast is degraded.
+    assert state.attributes["degraded"] is True
+    assert "source" not in state.attributes
+    assert "slope" not in state.attributes
+    assert "prediction_floor" not in state.attributes
 
 
 async def test_setup_without_floor_sensor_raises_config_entry_error(

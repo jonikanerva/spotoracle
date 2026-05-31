@@ -16,6 +16,7 @@ from predictor import (  # noqa: E402  (sys.path tweak above)
     bucket_records,
     build_forecast,
     expand_hourly_to_quarters,
+    last_priced_quarter,
     parse_price_sensor_attributes,
     quarter_key,
 )
@@ -124,6 +125,29 @@ class TestNonDictRecords(unittest.TestCase):
         self.assertEqual(expand_hourly_to_quarters(garbage), {})
 
 
+class TestLastPricedQuarter(unittest.TestCase):
+    def test_returns_none_for_empty_or_garbage(self) -> None:
+        self.assertIsNone(last_priced_quarter([]))
+        self.assertIsNone(last_priced_quarter(["garbage", 1, None]))
+
+    def test_returns_latest_quarter_utc(self) -> None:
+        start = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
+        prices = _make_price_entries(start, 96, value=4.0)  # 00:00 .. 23:45
+        self.assertEqual(
+            last_priced_quarter(prices),
+            datetime(2026, 5, 8, 23, 45, tzinfo=timezone.utc),
+        )
+
+    def test_normalises_local_time_to_utc(self) -> None:
+        # A +03:00 local entry must come back as its UTC instant so the series
+        # starts one UTC quarter later.
+        prices = [{"start": "2026-05-09T00:15:00+03:00", "price": 4.0}]
+        self.assertEqual(
+            last_priced_quarter(prices),
+            datetime(2026, 5, 8, 21, 15, tzinfo=timezone.utc),
+        )
+
+
 class TestBuildForecastInvariants(unittest.TestCase):
     def setUp(self) -> None:
         self.series_start = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
@@ -162,7 +186,11 @@ class TestBuildForecastInvariants(unittest.TestCase):
             min_fit_samples=24,
         )
 
-    def test_series_length_is_384(self) -> None:
+    def test_series_covers_full_window(self) -> None:
+        # build_forecast emits one predicted entry per quarter of the
+        # [series_start, series_end) window it is given. Here that is 4 days =
+        # 384 quarters. (The coordinator narrows this to a fixed 3-day window
+        # starting after the last published price; that is tested separately.)
         result = self._build()
         self.assertEqual(len(result["series"]), 384)
 
@@ -174,10 +202,12 @@ class TestBuildForecastInvariants(unittest.TestCase):
             self.assertEqual(point["start"], expected_ts.isoformat())
             self.assertIsNotNone(point["price"])
 
-    def test_source_values_are_valid(self) -> None:
+    def test_entries_have_only_start_and_price(self) -> None:
+        # The series is predicted-only, so entries carry no source field:
+        # exactly {start, price}.
         result = self._build()
         for point in result["series"]:
-            self.assertIn(point["source"], {"nordpool", "predicted"})
+            self.assertEqual(set(point), {"start", "price"})
 
     def test_default_fallback_when_too_few_samples(self) -> None:
         # Force fewer overlap samples than min_fit_samples by giving prices
@@ -219,7 +249,7 @@ class TestFillStatsEmptyInput(unittest.TestCase):
         self.assertEqual(result["filled_quarters"], 0)
         for point in result["series"]:
             self.assertEqual(point["price"], 0.0)
-            self.assertEqual(point["source"], "predicted")
+            self.assertNotIn("source", point)
 
 
 class TestPredictionFloor(unittest.TestCase):
@@ -231,8 +261,10 @@ class TestPredictionFloor(unittest.TestCase):
     residual=8000, which has zero variance → fit falls back to
     `fit_used_default=True` with default slope=0.002, intercept=-2.0.
 
-    With those defaults, future predictions per residual:
-      day 0 — residual 8000 → price 14.0 (covered by Nord Pool, not predicted)
+    With those defaults, predictions per residual (the whole series is
+    predicted-only — published prices are the fit target, not an output
+    source):
+      day 0 — residual 8000 → predicted 14.0 (above any floor in tests)
       day 1 — residual 8000 → predicted 14.0 (above any floor in tests)
       day 2 — residual 3000 → predicted 4.0  (below floor 5.0)
       day 3 — residual 1000 → predicted 0.0  (below floor 5.0)
@@ -288,9 +320,7 @@ class TestPredictionFloor(unittest.TestCase):
         self.assertEqual(result["prediction_floor_clipped_quarters"], 0)
         # Day 3 predictions reach 0.0 unmodified.
         day3_predicted = [
-            p
-            for p in result["series"]
-            if p["source"] == "predicted" and p["start"].startswith("2026-05-11")
+            p for p in result["series"] if p["start"].startswith("2026-05-11")
         ]
         self.assertTrue(day3_predicted, "expected day 3 predictions in series")
         self.assertTrue(
@@ -301,7 +331,7 @@ class TestPredictionFloor(unittest.TestCase):
     def test_floor_clips_low_predictions_only(self) -> None:
         result = self._build(floor=5.0)
         self.assertEqual(result["prediction_floor"], 5.0)
-        predicted = [p for p in result["series"] if p["source"] == "predicted"]
+        predicted = result["series"]
         for point in predicted:
             self.assertGreaterEqual(
                 point["price"],
@@ -318,9 +348,8 @@ class TestPredictionFloor(unittest.TestCase):
     def test_prediction_floor_clipped_quarters_count(self) -> None:
         result = self._build(floor=5.0)
         # predict_series output covers all 4 days (residual exists for each).
-        # Days 2 and 3 fall below floor 5.0 → 96 + 96 = 192 clipped quarters.
-        # Day 0 prediction is also 14.0 (above floor) but is overridden by
-        # Nord Pool source; it is not counted as clipped.
+        # Days 0 and 1 predict 14.0 (above floor); days 2 and 3 fall below
+        # floor 5.0 → 96 + 96 = 192 clipped quarters.
         self.assertEqual(result["prediction_floor_clipped_quarters"], 192)
 
     def test_floor_works_with_default_fit_fallback(self) -> None:

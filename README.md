@@ -4,11 +4,11 @@
 
 # SpotOracle
 
-A Home Assistant integration that produces a **0–96h electricity-price forecast** for the Finnish FI bidding zone by combining your existing Nord Pool day-ahead price sensor with Fingrid Open Data forecasts (wind power + consumption). Heuristic linear regression — no numpy/pandas/ML dependencies.
+A Home Assistant integration that forecasts **future** electricity prices for the Finnish FI bidding zone — the days your Nord Pool day-ahead sensor does **not yet** cover. It learns the price/load relationship from your existing day-ahead price sensor and projects it forward using Fingrid Open Data forecasts (wind power + consumption). Heuristic linear regression — no numpy/pandas/ML dependencies.
 
 ## What you get
 
-A single sensor `sensor.spotoracle_forecast` whose `forecast` attribute is a list of `{start, price, source}` entries at **15-minute resolution**, spanning local midnight today through 4 days ahead. The series always contains exactly **384 entries in chronological order, with no gaps and no null prices**. `source` is `nordpool` (published price from your source sensor) or `predicted` (heuristic forecast). Plugs directly into the ApexCharts card's `data_generator`.
+A single sensor `sensor.spotoracle_forecast` whose `forecast` attribute is a list of `{start, price}` entries at **15-minute resolution**. The series begins one quarter **after the last price your source sensor publishes** — it never duplicates prices you already have — and runs a fixed **3 days forward = exactly 288 entries**, in chronological order, with no gaps and no null prices. Plugs directly into the ApexCharts card's `data_generator`.
 
 ## Source price sensor requirements
 
@@ -64,41 +64,34 @@ If you are upgrading from v0.7.0 or v0.7.1 (where the floor sensor was either ab
 
 ## Sensor attributes
 
-| Attribute                       | Meaning                                                                                                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `forecast`                      | List of `{start, price, source}` at **15-min resolution** from local midnight today → +4 days = 384 entries. Use as the `data_generator` input for ApexCharts.                |
-| `source`                        | Source for the current 15-min point: `nordpool` or `predicted`.                                                                                                               |
-| `slope`, `intercept`            | Regression coefficients `price = slope · residual + intercept`.                                                                                                               |
-| `fit_samples`                   | Number of overlap quarters (15-min entries) included in the regression.                                                                                                       |
-| `fit_used_default`              | `true` if overlap < 24 quarters (= 6h) and fallback default coefficients were used.                                                                                           |
-| `consumption_extended_quarters` | Number of 15-min quarters where the consumption forecast was extrapolated from last week's actuals (0 if not needed).                                                         |
-| `wind_extended_quarters`        | Number of 15-min quarters where the wind power forecast was extrapolated from last week's actuals (0 if not needed).                                                          |
-| `filled_quarters`               | Number of quarters that were forward-filled from the most recent predicted value (data thinning, not a hard outage). Normally 0.                                              |
-| `zero_seeded_quarters`          | Number of quarters that fell back to `0.0` because neither actual nor predicted data was available (hard outage). If > 0, check Fingrid connectivity and the source sensor.   |
-| `prediction_floor`              | Lower bound applied to predicted prices (5th percentile of the floor sensor's hourly minimums over the last 30 days). `null` only if the LTS query fails (e.g. recorder unavailable, sensor has no statistics history yet).                |
-| `prediction_floor_clipped_quarters` | Number of predicted quarters whose value was clipped up to `prediction_floor`. 0 if no floor is in effect or if no quarters fell below it.                                |
-| `generated_at`                  | UTC timestamp marking when the forecast was computed.                                                                                                                         |
+| Attribute      | Meaning                                                                                                                                                                                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forecast`     | List of `{start, price}` at **15-min resolution**: a fixed 3-day (288-entry) window starting one quarter after your last published price. Use as the `data_generator` input for ApexCharts.                                                                          |
+| `generated_at` | UTC timestamp marking when the forecast was computed.                                                                                                                                                                                                                 |
+| `degraded`     | `true` when the forecast should **not** be trusted: either the price model could not be fitted (too little overlap with your source sensor → generic default coefficients) or some quarters had no Fingrid data and were zero-filled. Normally `false`.                |
+
+The forecast's unit is inherited from the source sensor's `unit_of_measurement` (exposed by Home Assistant as the entity's own `unit_of_measurement`). Detailed numeric diagnostics — regression coefficients, sample count, prediction floor, and last-week extension counts — are written to Home Assistant's debug log for `custom_components.spotoracle` rather than carried as entity attributes.
 
 ## Technical notes
 
 ### Native 15-min resolution
 
-Nord Pool moved to 15-minute price periods (MTU = Market Time Unit) in 2025. The integration runs natively at 15-min resolution — both the regression fit and the forecast output operate in 15-min steps. The `forecast` attribute always contains **384 entries spanning 4 full days**.
+Nord Pool moved to 15-minute price periods (MTU = Market Time Unit) in 2025. The integration runs natively at 15-min resolution — both the regression fit and the forecast output operate in 15-min steps. The `forecast` attribute always contains **exactly 288 entries spanning a fixed 3-day window**.
 
 For ApexCharts, the correct visualization for 15-min prices is **stepline** (a step function), not a smooth line: each quarter holds a flat price for its full duration, with sharp transitions between quarters. See the example below.
 
-### 4-day series in whole local days
+### Fixed 3-day window after published prices
 
-The series always covers **local midnight today + 4 days** = 384 quarters, regardless of wall-clock time. This gives an ApexCharts view (`graph_span: 4d`) a clean, day-aligned chart with no empty edges.
+The forecast does **not** duplicate prices your source sensor already publishes. It begins one 15-min quarter after the **last** published price and runs a fixed **3 days = 288 quarters** forward — so the first predicted quarter is the start of the first day your source sensor does not yet cover (typically tomorrow, or the day after once tomorrow's day-ahead prices are published around 14:00–15:00 EET). The window length is constant regardless of how much your sensor covers.
 
-Fingrid's own horizons are shorter: the wind power forecast (245) extends ~72h and the consumption forecast (165) ~24h. The remaining quarters are filled from **last week's actuals** at the same weekday/quarter pair:
+Fingrid's own forecast horizons are shorter than 3 days: the wind power forecast (245) extends ~72h and the consumption forecast (165) ~24h. The remaining quarters are filled from **last week's actuals** at the same weekday/quarter pair:
 
 - **Consumption** (dataset 124, hourly resolution expanded to 4 quarters/hour) → when Fingrid's consumption forecast ends.
 - **Wind power** (dataset 75, 15 min) → when Fingrid's wind power forecast ends.
 
-The Finnish electricity-consumption weekly cycle is strong, so consumption extrapolation is accurate. Wind power varies with weather, making the same hour one week ago a coarser proxy — in practice, the inaccuracy shows only in the last 6–24h tail, which is fine for automations.
+The Finnish electricity-consumption weekly cycle is strong, so consumption extrapolation is accurate. Wind power varies with weather, making the same hour one week ago a coarser proxy. When the window already starts after tomorrow's published prices, its later quarters lean entirely on this same-weekday-last-week extension — the same deliberate approximation the integration has always used for its multi-day tail, fine for automations.
 
-Check `consumption_extended_quarters` and `wind_extended_quarters` to see how many quarters were extrapolated from each source. Early in the morning both can be 0; toward evening they grow at roughly the same rate.
+The number of extrapolated quarters is written to the debug log (`cons_ext` / `wind_ext`) for `custom_components.spotoracle`.
 
 ## ApexCharts card
 
@@ -106,16 +99,15 @@ Requires the [`apexcharts-card`](https://github.com/RomRider/apexcharts-card) ca
 
 The example below covers all the essentials:
 
-- **From local midnight today** + 3 days ahead (`span.start: day`, `graph_span: 4d`).
+- **This sensor's 3-day forecast** as color-coded bars (`graph_span: 5d` comfortably fits a window that may start the day after tomorrow).
 - **Color coding by price level**: green < 15 c/kWh, yellow 15–30, red ≥ 30.
-- **Nord Pool vs. forecast** distinction via opacity (published prices at full brightness, forecast dimmer).
-- **"Now" marker** as a ▼ glyph.
+- **"Now" marker** as a ▼ glyph — the forecast bars sit to its right, in the future.
 
 ```yaml
 type: custom:apexcharts-card
 grid_options:
   columns: full
-graph_span: 4d
+graph_span: 5d
 span:
   start: day
 now:
@@ -159,24 +151,13 @@ series:
   - entity: sensor.spotoracle_forecast
     yaxis_id: price
     type: column
-    name: Nord Pool
-    opacity: 1
-    data_generator: |
-      return entity.attributes.forecast
-        .filter(p => p.source === 'nordpool')
-        .map(p => [new Date(p.start).getTime(), p.price]);
-  - entity: sensor.spotoracle_forecast
-    yaxis_id: price
-    type: column
     name: Forecast
-    opacity: 0.3
     data_generator: |
       return entity.attributes.forecast
-        .filter(p => p.source === 'predicted')
         .map(p => [new Date(p.start).getTime(), p.price]);
 ```
 
-The card shows **today's early morning → 3 days ahead** as color-coded bars. Green = cheap, yellow = mid-range, red = expensive. **Published Nord Pool prices** are rendered at full brightness, **the heuristic forecast** is dimmer (opacity 0.3). The yellow ▼ marks the current moment on the axis.
+The card shows **this sensor's 3-day forecast** as color-coded bars. Green = cheap, yellow = mid-range, red = expensive. The yellow ▼ marks the current moment on the axis; the forecast bars sit to its right, covering the days your own price sensor does not yet reach.
 
 > Colors are defined via ApexCharts' native `plotOptions.bar.colors.ranges`, not the apexcharts-card wrapper's `color_threshold` — this is the most reliable way to get distinct per-bar colors without bleeding into a gradient at 15-min resolution.
 
@@ -191,8 +172,8 @@ The card shows **today's early morning → 3 days ahead** as color-coded bars. G
 3. Bucket into 15-min quarters → compute `residual = consumption − wind` per quarter.
 4. For quarters with **both a published price and a Fingrid forecast**, fit a linear regression `price = a · residual + b`.
 5. When Fingrid's own forecasts end, **extrapolate both consumption and wind power from last week's actuals** (same weekday + same quarter).
-6. Apply the coefficients to all quarters where day-ahead has not been published yet.
-7. Merge published + predicted quarters into a single 4 × 96 = 384-point series starting at local midnight, with no gaps and no null prices.
+6. Apply the coefficients to every quarter starting one step **after the last published price**, running a fixed 3 days forward.
+7. Output a predicted-only **3 × 96 = 288-point** series, with no gaps and no null prices. Your published prices are the fit target only — they are never passed back through the forecast.
 
 ### Update frequency
 

@@ -29,12 +29,12 @@ from .const import (
     FLOOR_HISTORY_DAYS,
     FLOOR_PERCENTILE,
     FLOOR_REFRESH_INTERVAL,
+    FORECAST_DAYS,
     HISTORY_DAYS,
     MIN_FIT_SAMPLES,
-    SERIES_DAYS,
     UPDATE_INTERVAL,
 )
-from .predictor import build_forecast
+from .predictor import build_forecast, last_priced_quarter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -159,17 +159,27 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         return floor
 
     async def _async_update_data(self) -> dict:
-        # Series spans local midnight today → local midnight + SERIES_DAYS.
-        # All Fingrid lookups bracket this window with HISTORY_DAYS of context
-        # (for last-week extension) and 1 day of buffer at the end.
+        # The forecast covers a fixed FORECAST_DAYS window that begins one
+        # quarter after the last published price — the integration only
+        # predicts what the source sensor does not already cover. Fingrid
+        # lookups bracket this with HISTORY_DAYS of context (anchored to local
+        # midnight, enough for the same-weekday-last-week extension) and 1 day
+        # of buffer past the series end.
         local_now = dt_util.now()
-        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        series_start_utc = local_midnight.astimezone(timezone.utc)
-        series_end_utc = (
-            local_midnight + timedelta(days=SERIES_DAYS)
+        local_midnight_utc = local_now.replace(
+            hour=0, minute=0, second=0, microsecond=0
         ).astimezone(timezone.utc)
 
-        fetch_start = series_start_utc - timedelta(days=HISTORY_DAYS)
+        nordpool = self._read_price_sensor()
+        last_priced = last_priced_quarter(nordpool)
+        if last_priced is not None:
+            series_start_utc = last_priced + timedelta(minutes=15)
+        else:
+            # No published prices at all — predict from local midnight today.
+            series_start_utc = local_midnight_utc
+        series_end_utc = series_start_utc + timedelta(days=FORECAST_DAYS)
+
+        fetch_start = local_midnight_utc - timedelta(days=HISTORY_DAYS)
         fetch_end = series_end_utc + timedelta(hours=24)
 
         datasets = await self._fetch_datasets(
@@ -186,7 +196,6 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         wind_actual = datasets[DATASET_WIND_ACTUAL]
         cons_forecast = datasets[DATASET_CONSUMPTION_FORECAST]
         cons_actual = datasets[DATASET_CONSUMPTION_ACTUAL]
-        nordpool = self._read_price_sensor()
 
         floor = await self._resolve_floor()
 
