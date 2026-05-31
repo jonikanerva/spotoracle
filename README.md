@@ -42,7 +42,7 @@ The forecast unit is inherited from the source sensor's `unit_of_measurement` at
 
 The regression fits coefficients directly against the source sensor's values, so the forecast **automatically inherits the same fees** as the source sensor. If your sensor already exposes a "total price" (including transmission, margin, taxes), the forecast is a total-price forecast. If your sensor is pure spot, the forecast is pure spot.
 
-**Limitation**: if the fee structure has clear time-of-day dependence (e.g. night tariff 22–07 / day tariff 07–22), the linear regression absorbs only the average — individual night hours can be off by 1–3 c/kWh due to mean bias. This is sufficient for most automations. If you need tariff-aware pricing, encode the time-of-day rates into the source sensor itself (e.g. via a template sensor) so the forecast inherits them.
+**Time-of-day fees**: a clear time-of-day fee pattern (e.g. night tariff 22–07 / day tariff 07–22) is largely captured by the per-hour-of-day bias correction (see "How the forecast is computed", step 7), which learns the hourly offset from your published prices rather than averaging it away. A residual mismatch can remain right at tariff boundaries or when the pattern shifts seasonally; if you need exact tariff-aware pricing, encode the time-of-day rates into the source sensor itself (e.g. via a template sensor) so the forecast inherits them directly.
 
 ## Prediction floor (required)
 
@@ -173,7 +173,8 @@ The card shows **this sensor's 3-day forecast** as color-coded bars. Green = che
 4. For quarters with **both a published price and a Fingrid forecast**, fit a linear regression `price = a · residual + b`.
 5. When Fingrid's own forecasts end, **extrapolate both consumption and wind power from last week's actuals** (same weekday + same quarter).
 6. Apply the coefficients to every quarter starting one step **after the last published price**, running a fixed 3 days forward.
-7. Output a predicted-only **3 × 96 = 288-point** series, with no gaps and no null prices. Your published prices are the fit target only — they are never passed back through the forecast.
+7. **Add a per-hour-of-day bias correction** learned from your published prices (the mean of `actual − predicted` grouped by UTC hour). The linear residual model captures the overall price *level* but not the daily price *rhythm* — morning/evening peaks, night troughs — which is driven by factors outside Finnish consumption and wind. This additive correction recovers that rhythm.
+8. Output a predicted-only **3 × 96 = 288-point** series, with no gaps and no null prices. Your published prices are the fit target only — they are never passed back through the forecast.
 
 ### Update frequency
 
