@@ -88,6 +88,21 @@ def parse_price_sensor_attributes(prices: Iterable[dict]) -> dict[str, float]:
     return {k: sum(vs) / len(vs) for k, vs in buckets.items()}
 
 
+def last_priced_quarter(prices: Iterable[dict]) -> datetime | None:
+    """Return the latest 15-min quarter (UTC) the source price sensor publishes
+    a price for, or None if there are no usable price entries.
+
+    The forecast series begins one quarter after this point: the integration
+    only predicts the window the source sensor does not already cover, and never
+    passes published prices back through. Quarter keys are ISO8601 UTC strings,
+    so the lexicographic max is also the chronological max.
+    """
+    priced = parse_price_sensor_attributes(prices)
+    if not priced:
+        return None
+    return _parse_iso(max(priced))
+
+
 def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float]:
     """Expand hourly records into 4 quarter-keys per hour with the same value.
 
@@ -169,29 +184,32 @@ def predict_series(
     return {h: a * r + b for h, r in residual_dict.items()}
 
 
-def merge_actual_and_predicted(
-    actual: dict[str, float],
+def build_predicted_series(
     predicted: dict[str, float],
     series_start: datetime,
     num_quarters: int,
 ) -> tuple[list[dict], dict[str, int]]:
-    """Build a quarter-by-quarter list for [series_start, series_start + num_quarters * 15min).
+    """Build a quarter-by-quarter predicted-only list for
+    [series_start, series_start + num_quarters * 15min).
 
-    series_start is normally aligned to the start of the local day so the chart
-    can render the full current day even before the current moment.
+    Every entry is `{start, price}` — the output is predicted-only, so there is
+    no per-entry source field. The integration never passes the user's published
+    prices back through. `series_start` is the first quarter the source sensor
+    does not already cover (computed by the coordinator from last_priced_quarter),
+    so the series begins where the published prices end.
 
     Invariant: returns exactly `num_quarters` entries in chronological order,
-    no gaps, no null prices. When neither `actual` nor `predicted` covers a
-    quarter, forward-fill from the most recent predicted value. If the very
-    first quarters have no predicted data either, look ahead for the first
-    available predicted value to seed the fill.
+    no gaps, no null prices. When `predicted` does not cover a quarter,
+    forward-fill from the most recent predicted value. If the very first
+    quarters have no predicted data either, look ahead for the first available
+    predicted value to seed the fill.
 
     Returns `(series, stats)` where `stats` is a dict with:
       - `filled_quarters`: how many quarters were forward-filled from a
         previous predicted value (data thinning, not a hard outage).
-      - `zero_seeded_quarters`: how many quarters fell back to 0.0 because
-        neither actual nor any predicted value was available (hard outage —
-        if > 0, surface this to the user via a sensor attribute).
+      - `zero_seeded_quarters`: how many quarters fell back to 0.0 because no
+        predicted value was available anywhere (hard outage — surfaces to the
+        user via the sensor's `degraded` flag).
     """
     keys = [(series_start + timedelta(minutes=15 * i)).isoformat() for i in range(num_quarters)]
 
@@ -206,18 +224,15 @@ def merge_actual_and_predicted(
     filled_quarters = 0
     zero_seeded_quarters = 0
     for key in keys:
-        if key in actual:
-            out.append({"start": key, "price": round(actual[key], 3), "source": "nordpool"})
-            continue
         if key in predicted:
             last_predicted = predicted[key]
-            out.append({"start": key, "price": round(last_predicted, 3), "source": "predicted"})
+            out.append({"start": key, "price": round(last_predicted, 3)})
             continue
         if last_predicted is not None:
-            out.append({"start": key, "price": round(last_predicted, 3), "source": "predicted"})
+            out.append({"start": key, "price": round(last_predicted, 3)})
             filled_quarters += 1
             continue
-        out.append({"start": key, "price": 0.0, "source": "predicted"})
+        out.append({"start": key, "price": 0.0})
         zero_seeded_quarters += 1
     stats = {
         "filled_quarters": filled_quarters,
@@ -241,16 +256,22 @@ def build_forecast(
 ) -> dict:
     """Run the full pipeline at 15-min resolution.
 
-    Series spans [series_start, series_end), both normally aligned to local
-    midnight so the dashboard always shows whole days. Quarters past the
-    Fingrid forecast horizons are filled from the actual datasets one week
-    back (same weekday + same quarter).
+    The output series spans [series_start, series_end) and is entirely
+    predicted; each entry is `{start, price}` with no source field. The
+    coordinator sets `series_start` to the first quarter the source price
+    sensor does not already cover, so the series
+    begins where the user's published prices end — published prices are used to
+    fit the model but are never passed back through. Quarters past the Fingrid
+    forecast horizons are filled from the actual datasets one week back (same
+    weekday + same quarter).
 
-    `floor`, if provided, is a lower bound applied to predicted prices only:
-    any predicted quarter whose value would fall below `floor` is clipped to
-    `floor`. The floor is computed by the I/O boundary (coordinator) from
-    the user's long-term statistics — see CONF_FLOOR_SENSOR. Actual
-    (`nordpool`) prices are never clipped; the floor only suppresses OLS
+    `nordpool_prices` is the source sensor's published price list; it is the
+    fit target only (`align_series`), never an output source.
+
+    `floor`, if provided, is a lower bound applied to predicted prices: any
+    predicted quarter whose value would fall below `floor` is clipped to
+    `floor`. The floor is computed by the I/O boundary (coordinator) from the
+    user's long-term statistics — see CONF_FLOOR_SENSOR. It only suppresses OLS
     extrapolation below the observed price range.
     """
     series_start = _quarter_floor(series_start)
@@ -286,9 +307,7 @@ def build_forecast(
         predicted = {h: floor if p < floor else p for h, p in predicted.items()}
 
     num_quarters = max(0, int((series_end - series_start).total_seconds() // 900))
-    series, fill_stats = merge_actual_and_predicted(
-        actual_prices, predicted, series_start, num_quarters
-    )
+    series, fill_stats = build_predicted_series(predicted, series_start, num_quarters)
 
     return {
         "series": series,

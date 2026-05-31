@@ -4,22 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Home Assistant **custom integration** distributed via HACS that produces a 0–96h electricity-price forecast for Finland (FI bidding zone) at native 15-minute resolution. It is read by Home Assistant as a single sensor (`sensor.spotoracle_forecast`) whose `forecast` attribute (384 entries spanning 4 full local days) drives an ApexCharts dashboard card.
+A Home Assistant **custom integration** distributed via HACS that forecasts future electricity prices for Finland (FI bidding zone) at native 15-minute resolution — the window the user's day-ahead price sensor does **not yet** cover. It is read by Home Assistant as a single sensor (`sensor.spotoracle_forecast`) whose `forecast` attribute (exactly 288 entries = a fixed 3-day window starting one quarter after the last published price) drives an ApexCharts dashboard card.
 
 ## Architecture
 
 Three thin layers, intentionally separated:
 
-- **`predictor.py`** — pure logic, no HA imports. Inputs are plain dicts (Fingrid records, Nord Pool prices); output is a list of `{start, price, source}`. Easy to unit-test without mocking Home Assistant.
-- **`coordinator.py`** — I/O boundary. `DataUpdateCoordinator` that polls Fingrid (one HTTP call per cycle, multi-dataset endpoint splits by `datasetId`), reads the user's price sensor from `hass.states`, and handles errors via `UpdateFailed`.
-- **`sensor.py`** — thin entity layer. A single `CoordinatorEntity` exposing `native_value` (current quarter's price) and `extra_state_attributes` (the full 384-entry forecast plus diagnostics). No computation here.
+- **`predictor.py`** — pure logic, no HA imports. Inputs are plain dicts (Fingrid records, Nord Pool prices — the latter is the regression's fit target, never an output source); output is a predicted-only list of `{start, price}` (no per-entry source field). Easy to unit-test without mocking Home Assistant.
+- **`coordinator.py`** — I/O boundary. `DataUpdateCoordinator` that polls Fingrid (one HTTP call per cycle, multi-dataset endpoint splits by `datasetId`), reads the user's price sensor from `hass.states`, derives the series start from it (`last_priced_quarter`), and handles errors via `UpdateFailed`.
+- **`sensor.py`** — thin entity layer. A single `CoordinatorEntity` exposing `native_value` (first forecast point — "now" sits in the published range the series no longer covers) and `extra_state_attributes` (`forecast`, `generated_at`, `degraded` only). No computation here.
 
 The pipeline runs every 30 min in `coordinator.py`'s `_async_update_data`:
 
-1. Read the user's existing Nord Pool sensor (`hass.states.get(price_sensor).attributes.prices`). Source of truth for actual day-ahead prices.
+1. Read the user's existing Nord Pool sensor (`hass.states.get(price_sensor).attributes.prices`). It is the regression's fit target and sets where the forecast starts (one quarter after the last published price); it is never passed back through the output.
 2. Fetch four Fingrid datasets in **one** HTTP call to `/api/data?datasets=245,75,165,124`.
 3. Pass everything to `predictor.build_forecast`, which runs a closed-form 2-parameter OLS fit `price = a · residual + b` where `residual = consumption − wind`, all on 15-min quarter keys.
-4. Output: 384 entries `{start: ISO8601, price: float, source: "nordpool"|"predicted"}` spanning local midnight today through 4 days ahead, with **no gaps and no null prices**.
+4. Output: exactly 288 predicted entries `{start: ISO8601, price: float}` spanning a fixed 3 days starting one quarter after the last published price, with **no gaps and no null prices**.
 
 ## Repository layout
 
@@ -45,11 +45,11 @@ spotoracle/                            # GitHub repo root (HACS reads from here)
 | Fingrid ID | Resolution | Role |
 |---|---|---|
 | 245 | 15 min, ~72h ahead | Wind power generation forecast |
-| 75  | 15 min            | Actual wind power, used to fill the 72–96h tail with the same weekday a week ago |
+| 75  | 15 min            | Actual wind power, used to fill the post-forecast tail with the same weekday a week ago |
 | 165 | 15 min, ~24h ahead | Consumption forecast (used while available) |
-| 124 | hourly            | Actual past consumption — expanded 4× per hour by `expand_hourly_to_quarters`, used to fill in the 25–96h slot from the same weekday a week ago |
+| 124 | hourly            | Actual past consumption — expanded 4× per hour by `expand_hourly_to_quarters`, used to fill the post-forecast tail from the same weekday a week ago |
 
-The user's price sensor is the **only** source of actual day-ahead prices; the integration never queries Nord Pool / ENTSO-E / elering directly. The price sensor format is documented in `README.md` under "Source price sensor requirements".
+The user's price sensor is the **only** source of actual day-ahead prices and the regression's fit target; the integration never queries Nord Pool / ENTSO-E / elering directly, and never echoes the user's prices back through the forecast (the series starts where they end). The price sensor format is documented in `README.md` under "Source price sensor requirements".
 
 ## Language Policy
 
@@ -100,7 +100,8 @@ import sys; sys.path.insert(0, 'custom_components/spotoracle')
 from predictor import build_forecast
 # build mock nordpool_prices, wind_records, wind_actual_records,
 # consumption_forecast_records, consumption_actual_records (hourly!),
-# then call build_forecast(...) and assert len(result['series']) == 384.
+# then call build_forecast(...) and assert len(result['series']) equals the
+# number of quarters in your series_start..series_end window (e.g. 288 for 3 days).
 "
 ```
 
@@ -140,12 +141,12 @@ Sandbox restrictions: GPG signing and SSH push need `dangerouslyDisableSandbox: 
 - All keys in `predictor.py` dicts are **ISO8601 UTC strings** floored to the 15-min quarter boundary (`_quarter_key`). Mixing local and UTC will silently fail.
 - The forecast output **inherits its unit** from the source price sensor's `unit_of_measurement` attribute (c/kWh, EUR/MWh — whatever the user has). Never hardcode a unit in `sensor.py`.
 - `MIN_FIT_SAMPLES` is in **quarters**, not hours. 24 quarters = 6h overlap. If you change the resolution again, change this together.
-- Diagnostic attributes on the sensor (`slope`, `intercept`, `fit_samples`, `fit_used_default`, `consumption_extended_quarters`, `wind_extended_quarters`, `prediction_floor`, `prediction_floor_clipped_quarters`, `generated_at`) are intentional debugging surface — keep them.
-- `extend_with_last_week` is a **deliberate approximation**, not a hidden ML model. Finnish electricity consumption has a strong weekly cycle, so copying same-weekday-same-quarter from 7 days ago is good enough for the 25–96h tail. Document any future replacement (e.g. multi-week mean, seasonal model) as such.
-- `merge_actual_and_predicted` is contractual: returns exactly `num_quarters` entries in chronological order, no gaps, no null prices. Forward-fill from the most recent predicted value when both `actual` and `predicted` miss a quarter.
-- `build_forecast` accepts an optional `floor: float | None` (computed by the I/O boundary in `coordinator.py` from the user's LTS-recorded "current price" sensor). When provided, predicted-source quarters with `slope · residual + intercept < floor` are clipped up to `floor`. Actual (`nordpool`) prices are never clipped. Predictor stays HA-import-free; the floor flows in as a plain number.
+- The sensor exposes a deliberately minimal attribute surface: `forecast`, `generated_at`, and `degraded` (true when `fit_used_default` or `zero_seeded_quarters > 0` — the only states where the forecast should not be trusted). The numeric diagnostics (`slope`, `intercept`, `fit_samples`, `consumption_extended_quarters`, `wind_extended_quarters`, `prediction_floor`, `prediction_floor_clipped_quarters`) are still computed in `build_forecast` and logged at debug level in `coordinator.py`, but are intentionally **not** entity attributes. Keep `build_forecast`'s result dict returning them — the debug log depends on them.
+- `extend_with_last_week` is a **deliberate approximation**, not a hidden ML model. Finnish electricity consumption has a strong weekly cycle, so copying same-weekday-same-quarter from 7 days ago is good enough for the multi-day tail past Fingrid's own horizons. Document any future replacement (e.g. multi-week mean, seasonal model) as such.
+- `build_predicted_series` is contractual: returns exactly `num_quarters` predicted entries `{start, price}` (no source field) in chronological order, no gaps, no null prices. Forward-fill from the most recent predicted value when `predicted` misses a quarter; if no predicted value exists anywhere, seed `0.0` and count it in `zero_seeded_quarters`. The coordinator sets `series_start` via `last_priced_quarter` so the series begins after the last published price.
+- `build_forecast` accepts an optional `floor: float | None` (computed by the I/O boundary in `coordinator.py` from the user's LTS-recorded "current price" sensor). When provided, predicted quarters with `slope · residual + intercept < floor` are clipped up to `floor`; this only suppresses OLS extrapolation below the observed price range. Predictor stays HA-import-free; the floor flows in as a plain number.
 
 ## Out of scope (don't do these)
 
 - Don't add a YAML configuration option — config flow only. The user does not edit `configuration.yaml`.
-- Don't return shorter forecast series. The 384-entry contract above is load-bearing for the ApexCharts card layout.
+- Don't change the series length without reason. The fixed **288-entry** contract (3 days × 96 quarters, `FORECAST_DAYS`) is load-bearing for the ApexCharts card layout. The length is constant regardless of how much the source sensor covers; only the start shifts.

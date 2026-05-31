@@ -16,7 +16,8 @@ DATASET_CONSUMPTION_FORECAST = 165      # consumption forecast, 15 min, ~24h
 DATASET_CONSUMPTION_ACTUAL = 124        # actual consumption, hourly (used for last-week extension)
 
 HISTORY_DAYS = 8                        # how many days of history to fetch for last-week extension
-SERIES_DAYS = 4                         # series spans local-midnight + N days (= 4 × 96 = 384 quarters)
+FORECAST_DAYS = 3                       # predicted series length: fixed N days after the last published
+                                        # price (= 3 × 96 = 288 quarters), no published-price pass-through
 
 MIN_FIT_SAMPLES = 24             # quarters; 24 × 15 min = 6h minimum overlap
 

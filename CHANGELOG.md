@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-31
+
+### Changed
+- **Breaking: the forecast no longer passes published prices through.** The
+  `forecast` series now contains only the integration's own predictions and
+  begins one 15-minute quarter after the last price your source sensor
+  publishes — typically the start of tomorrow, or the day after once tomorrow's
+  day-ahead prices arrive. Your published prices are still read, but only as the
+  regression's fit target; they are never echoed back. Overlay the forecast
+  against your own price sensor in ApexCharts for a continuous past→future view.
+- **Breaking: fixed series length changed from 384 (4 days) to 288 (3 days).**
+  The window is a constant 3 days forward (`FORECAST_DAYS`); only its start
+  shifts with how much your sensor already covers. Forecast entries are now
+  `{start, price}` — there is no per-entry `source` field.
+- **Breaking: minimal sensor attributes.** The entity now exposes only
+  `forecast`, `generated_at`, and a new `degraded` flag. The previous numeric
+  diagnostics are still computed and written to the
+  `custom_components.spotoracle` debug log, but are no longer entity attributes.
+
+### Added
+- `degraded` attribute: `true` when the forecast should not be trusted — the
+  price model fell back to default coefficients (too little overlap with your
+  source sensor) or some quarters had no Fingrid data and were zero-filled.
+
+### Removed
+- Sensor attributes `source`, `slope`, `intercept`, `fit_samples`,
+  `fit_used_default`, `consumption_extended_quarters`, `wind_extended_quarters`,
+  `filled_quarters`, `zero_seeded_quarters`, `prediction_floor`, and
+  `prediction_floor_clipped_quarters`. The numeric values remain in the debug
+  log.
+- The per-entry `source` field on forecast entries (it previously
+  distinguished `nordpool` from `predicted`); entries are now `{start, price}`.
+
 ## [1.0.0] - 2026-05-09
 
 First stable release. The integration has been running in production
@@ -126,7 +159,8 @@ contract as stable.
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/jonikanerva/spotoracle/compare/v0.7.2...v1.0.0
 [0.7.2]: https://github.com/jonikanerva/spotoracle/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/jonikanerva/spotoracle/compare/v0.7.0...v0.7.1
