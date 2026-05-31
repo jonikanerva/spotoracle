@@ -184,6 +184,57 @@ def predict_series(
     return {h: a * r + b for h, r in residual_dict.items()}
 
 
+def _hour_of_day(quarter: str) -> int:
+    """UTC hour (0-23) of a quarter key.
+
+    The time-of-day bias profile is learned and applied entirely in UTC, so no
+    timezone handling enters the predictor. The daily price rhythm is captured
+    consistently regardless of the local offset (a fixed UTC hour maps to a
+    fixed local hour outside DST changeovers, which are negligible here).
+    """
+    return _parse_iso(quarter).hour
+
+
+def fit_hour_bias(
+    actual_prices: dict[str, float], predicted: dict[str, float]
+) -> tuple[dict[int, float], float]:
+    """Mean residual error (actual - predicted) per UTC hour-of-day, computed
+    over the quarters where both an actual price and a base prediction exist.
+
+    The linear `a*residual + b` model captures the load/price *level* but not
+    the daily price *rhythm* (morning/evening peaks, night troughs) that is
+    driven by factors outside FI consumption-wind — neighbour prices, the
+    Nordic solar/demand profile, etc. This additive per-hour correction recovers
+    that rhythm from the source sensor's own published prices.
+
+    Returns `(bias_by_hour, global_bias)`; `global_bias` is the fallback for
+    hours absent from the overlap.
+    """
+    by_hour: dict[int, list[float]] = {}
+    all_errors: list[float] = []
+    for q, actual in actual_prices.items():
+        if q in predicted:
+            error = actual - predicted[q]
+            by_hour.setdefault(_hour_of_day(q), []).append(error)
+            all_errors.append(error)
+    global_bias = sum(all_errors) / len(all_errors) if all_errors else 0.0
+    bias_by_hour = {h: sum(errs) / len(errs) for h, errs in by_hour.items()}
+    return bias_by_hour, global_bias
+
+
+def apply_hour_bias(
+    predicted: dict[str, float],
+    bias_by_hour: dict[int, float],
+    global_bias: float,
+) -> dict[str, float]:
+    """Add the per-UTC-hour bias to each predicted quarter (falling back to
+    `global_bias` for hours not seen in the overlap)."""
+    return {
+        q: p + bias_by_hour.get(_hour_of_day(q), global_bias)
+        for q, p in predicted.items()
+    }
+
+
 def build_predicted_series(
     predicted: dict[str, float],
     series_start: datetime,
@@ -253,6 +304,7 @@ def build_forecast(
     default_intercept: float,
     min_fit_samples: int,
     floor: float | None = None,
+    apply_time_bias: bool = True,
 ) -> dict:
     """Run the full pipeline at 15-min resolution.
 
@@ -273,6 +325,12 @@ def build_forecast(
     `floor`. The floor is computed by the I/O boundary (coordinator) from the
     user's long-term statistics — see CONF_FLOOR_SENSOR. It only suppresses OLS
     extrapolation below the observed price range.
+
+    When `apply_time_bias` is true (the default), an additive per-UTC-hour bias
+    correction is layered on top of the linear model before flooring. It is
+    learned from the source sensor's published prices and recovers the daily
+    price rhythm the residual model alone cannot (see `fit_hour_bias`). Tests
+    that exercise the raw linear+floor behaviour pass `apply_time_bias=False`.
     """
     series_start = _quarter_floor(series_start)
     series_end = _quarter_floor(series_end)
@@ -301,6 +359,13 @@ def build_forecast(
         a, b, used_default = default_slope, default_intercept, True
 
     predicted = predict_series(residual, a, b)
+
+    hour_bias_buckets = 0
+    if apply_time_bias:
+        bias_by_hour, global_bias = fit_hour_bias(actual_prices, predicted)
+        predicted = apply_hour_bias(predicted, bias_by_hour, global_bias)
+        hour_bias_buckets = len(bias_by_hour)
+
     clipped_quarters = 0
     if floor is not None:
         clipped_quarters = sum(1 for p in predicted.values() if p < floor)
@@ -321,4 +386,5 @@ def build_forecast(
         "zero_seeded_quarters": fill_stats["zero_seeded_quarters"],
         "prediction_floor": floor,
         "prediction_floor_clipped_quarters": clipped_quarters,
+        "hour_bias_buckets": hour_bias_buckets,
     }
