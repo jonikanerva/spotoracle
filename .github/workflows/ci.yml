@@ -25,7 +25,7 @@ jobs:
           cache-dependency-path: requirements_test.txt
 
       - name: Compile Python sources
-        run: python -m py_compile custom_components/spotoracle/*.py
+        run: python -m py_compile custom_components/spotoracle/*.py tools/*.py
 
       - name: Install test dependencies
         run: pip install -r requirements_test.txt
