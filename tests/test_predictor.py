@@ -125,6 +125,30 @@ class TestNonDictRecords(unittest.TestCase):
         self.assertEqual(expand_hourly_to_quarters(garbage), {})
 
 
+class TestExpandToQuarters(unittest.TestCase):
+    def test_hourly_input_fills_four_quarters(self) -> None:
+        records = [{"startTime": "2026-05-08T00:00:00Z", "value": 100.0}]
+        result = expand_hourly_to_quarters(records)
+        self.assertEqual(len(result), 4)
+        self.assertTrue(all(v == 100.0 for v in result.values()))
+
+    def test_15min_input_passes_through(self) -> None:
+        # Regression: Fingrid dataset 124 is now 15-min. Distinct quarter values
+        # must survive rather than being smeared to one value per hour (the old
+        # expand-from-:00 behaviour collapsed them and the last write won).
+        records = [
+            {"startTime": "2026-05-08T00:00:00Z", "value": 10.0},
+            {"startTime": "2026-05-08T00:15:00Z", "value": 20.0},
+            {"startTime": "2026-05-08T00:30:00Z", "value": 30.0},
+            {"startTime": "2026-05-08T00:45:00Z", "value": 40.0},
+        ]
+        result = expand_hourly_to_quarters(records)
+        self.assertEqual(len(result), 4)
+        self.assertEqual(sorted(result.values()), [10.0, 20.0, 30.0, 40.0])
+        k15 = quarter_key(datetime(2026, 5, 8, 0, 15, tzinfo=timezone.utc))
+        self.assertEqual(result[k15], 20.0)
+
+
 class TestLastPricedQuarter(unittest.TestCase):
     def test_returns_none_for_empty_or_garbage(self) -> None:
         self.assertIsNone(last_priced_quarter([]))
