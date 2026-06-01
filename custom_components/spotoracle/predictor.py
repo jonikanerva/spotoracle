@@ -103,30 +103,27 @@ def last_priced_quarter(prices: Iterable[dict]) -> datetime | None:
     return _parse_iso(max(priced))
 
 
-def expand_hourly_to_quarters(hourly_records: Iterable[dict]) -> dict[str, float]:
-    """Expand hourly records into 4 quarter-keys per hour with the same value.
+def expand_hourly_to_quarters(records: Iterable[dict]) -> dict[str, float]:
+    """Bucket records to 15-min quarters, filling any hour that only carries its
+    top-of-hour (`:00`) value — i.e. genuinely hourly input.
 
-    Used for Fingrid datasets that are hourly resolution (e.g. 124, actual
-    consumption) when the rest of the pipeline operates on 15-min quarters.
+    Historically Fingrid dataset 124 (actual consumption) was hourly, so this
+    expanded each hourly value into 4 identical quarters. Since the 2025 MTU
+    shift the dataset is published at 15-min resolution. This function is now
+    resolution-agnostic: it buckets at native 15-min resolution first, so
+    genuine 15-min input passes through with its distinct `:15/:30/:45` values
+    intact, and only truly hourly input (where those quarters are absent) is
+    filled from the `:00` value. The name is kept for backward compatibility.
     """
-    out: dict[str, float] = {}
-    for r in hourly_records:
-        if not isinstance(r, dict):
-            _LOGGER.debug("Skipping non-dict hourly record: %s", r)
-            continue
-        start = r.get("startTime") or r.get("start_time") or r.get("start")
-        val = r.get("value")
-        if start is None or val is None:
-            continue
-        try:
-            hour_dt = _parse_iso(start).replace(minute=0, second=0, microsecond=0)
-            quarter_value = float(val)
-        except (ValueError, TypeError):
-            _LOGGER.debug("Skipping malformed hourly record: %s", r)
-            continue
-        for q in range(4):
-            qts = hour_dt + timedelta(minutes=15 * q)
-            out[_quarter_key(qts)] = quarter_value
+    quarters = bucket_records(records)
+    out = dict(quarters)
+    for key, value in quarters.items():
+        dt = _parse_iso(key)
+        if dt.minute == 0:
+            for minute in (15, 30, 45):
+                quarter = _quarter_key(dt.replace(minute=minute))
+                if quarter not in quarters:
+                    out[quarter] = value
     return out
 
 

@@ -86,7 +86,7 @@ The forecast does **not** duplicate prices your source sensor already publishes.
 
 Fingrid's own forecast horizons are shorter than 3 days: the wind power forecast (245) extends ~72h and the consumption forecast (165) ~24h. The remaining quarters are filled from **last week's actuals** at the same weekday/quarter pair:
 
-- **Consumption** (dataset 124, hourly resolution expanded to 4 quarters/hour) → when Fingrid's consumption forecast ends.
+- **Consumption** (dataset 124, 15-min resolution) → when Fingrid's consumption forecast ends.
 - **Wind power** (dataset 75, 15 min) → when Fingrid's wind power forecast ends.
 
 The Finnish electricity-consumption weekly cycle is strong, so consumption extrapolation is accurate. Wind power varies with weather, making the same hour one week ago a coarser proxy. When the window already starts after tomorrow's published prices, its later quarters lean entirely on this same-weekday-last-week extension — the same deliberate approximation the integration has always used for its multi-day tail, fine for automations.
@@ -168,7 +168,7 @@ The card shows **this sensor's 3-day forecast** as color-coded bars. Green = che
    - **245** — wind power forecast (15 min, ~72h).
    - **75** — actual wind power (15 min, used to extrapolate the forecast).
    - **165** — consumption forecast (15 min, ~24h).
-   - **124** — actual consumption (hourly, expanded to 4 quarters/hour).
+   - **124** — actual consumption (15-min since the 2025 MTU shift; hourly input is still handled for backward compatibility).
 3. Bucket into 15-min quarters → compute `residual = consumption − wind` per quarter.
 4. For quarters with **both a published price and a Fingrid forecast**, fit a linear regression `price = a · residual + b`.
 5. When Fingrid's own forecasts end, **extrapolate both consumption and wind power from last week's actuals** (same weekday + same quarter).

@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-06-01
+
+### Fixed
+- **Dataset 124 (actual consumption) is now read at its native 15-minute
+  resolution.** Fingrid moved this dataset to 15-min after the 2025 MTU shift,
+  but the integration still treated it as hourly and collapsed each hour into a
+  single value (the last 15-min sample of the hour won and was smeared across
+  all four quarters). `expand_hourly_to_quarters` is now resolution-agnostic:
+  genuine 15-min input passes through with its distinct quarter values intact,
+  while truly hourly input is still filled from the `:00` value for backward
+  compatibility. This only affects the post-Fingrid-horizon tail extension that
+  124 feeds; measured forecast accuracy is essentially unchanged (day-1 rank
+  0.77 → 0.78), but the consumption inputs are no longer distorted.
+
 ## [2.1.0] - 2026-05-31
 
 ### Added
@@ -184,7 +198,8 @@ contract as stable.
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/jonikanerva/spotoracle/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jonikanerva/spotoracle/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/jonikanerva/spotoracle/compare/v0.7.2...v1.0.0

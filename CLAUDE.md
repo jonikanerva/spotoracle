@@ -47,7 +47,7 @@ spotoracle/                            # GitHub repo root (HACS reads from here)
 | 245 | 15 min, ~72h ahead | Wind power generation forecast |
 | 75  | 15 min            | Actual wind power, used to fill the post-forecast tail with the same weekday a week ago |
 | 165 | 15 min, ~24h ahead | Consumption forecast (used while available) |
-| 124 | hourly            | Actual past consumption — expanded 4× per hour by `expand_hourly_to_quarters`, used to fill the post-forecast tail from the same weekday a week ago |
+| 124 | 15 min (was hourly pre-2025-MTU) | Actual past consumption, used to fill the post-forecast tail from the same weekday a week ago. Passed through `expand_hourly_to_quarters`, which is now resolution-agnostic: 15-min input passes through with distinct quarter values; only genuinely hourly input is filled 4× from the `:00` value |
 
 The user's price sensor is the **only** source of actual day-ahead prices and the regression's fit target; the integration never queries Nord Pool / ENTSO-E / elering directly, and never echoes the user's prices back through the forecast (the series starts where they end). The price sensor format is documented in `README.md` under "Source price sensor requirements".
 
@@ -99,7 +99,7 @@ python3 -c "
 import sys; sys.path.insert(0, 'custom_components/spotoracle')
 from predictor import build_forecast
 # build mock nordpool_prices, wind_records, wind_actual_records,
-# consumption_forecast_records, consumption_actual_records (hourly!),
+# consumption_forecast_records, consumption_actual_records (15-min; hourly also accepted),
 # then call build_forecast(...) and assert len(result['series']) equals the
 # number of quarters in your series_start..series_end window (e.g. 288 for 3 days).
 "

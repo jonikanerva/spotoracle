@@ -13,7 +13,7 @@ FINGRID_API_BASE = "https://data.fingrid.fi/api"
 DATASET_WIND_FORECAST_15MIN = 245       # wind power forecast, 15 min, ~72h
 DATASET_WIND_ACTUAL = 75                # actual wind power, 15 min (used for last-week extension)
 DATASET_CONSUMPTION_FORECAST = 165      # consumption forecast, 15 min, ~24h
-DATASET_CONSUMPTION_ACTUAL = 124        # actual consumption, hourly (used for last-week extension)
+DATASET_CONSUMPTION_ACTUAL = 124        # actual consumption, 15-min since the 2025 MTU shift (used for last-week extension)
 
 HISTORY_DAYS = 8                        # how many days of history to fetch for last-week extension
 FORECAST_DAYS = 3                       # predicted series length: fixed N days after the last published
