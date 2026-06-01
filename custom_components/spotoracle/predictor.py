@@ -131,12 +131,19 @@ def extend_with_last_week(
     forecast: dict[str, float],
     actual: dict[str, float],
     horizon_end: datetime,
+    weeks: int = 1,
 ) -> dict[str, float]:
-    """Fill missing quarters after `forecast` ends with values from the same
-    weekday/quarter one week ago, taken from `actual`. Returns a new dict.
+    """Fill missing quarters after `forecast` ends with the mean of the same
+    weekday/quarter over the last `weeks` weeks, taken from `actual`. Returns a
+    new dict.
 
-    Used for both consumption (Finnish weekly demand pattern is strong) and
-    wind power (rougher proxy, but acceptable for the last 6–24h tail).
+    `weeks=1` (the default) copies the single most recent same-weekday value —
+    right for **consumption**, whose strong Finnish weekly cycle makes one week
+    ago the most representative. **Wind** has no weekly cycle, so a single week
+    is essentially noise; averaging over several weeks (`weeks>1`) pulls the
+    estimate toward the local climatology and measurably improves the day-2/3
+    tail (see backtest). Quarters with no usable history in any of the `weeks`
+    look-backs are left unfilled.
     """
     out = dict(forecast)
     if not forecast:
@@ -144,10 +151,13 @@ def extend_with_last_week(
     last_known = _parse_iso(max(forecast))
     cursor = last_known + timedelta(minutes=15)
     while cursor < horizon_end:
-        prev_week = cursor - timedelta(days=7)
-        prev_key = _quarter_key(prev_week)
-        if prev_key in actual:
-            out[_quarter_key(cursor)] = actual[prev_key]
+        values = []
+        for week in range(1, weeks + 1):
+            prev_key = _quarter_key(cursor - timedelta(days=7 * week))
+            if prev_key in actual:
+                values.append(actual[prev_key])
+        if values:
+            out[_quarter_key(cursor)] = sum(values) / len(values)
         cursor += timedelta(minutes=15)
     return out
 
@@ -302,6 +312,7 @@ def build_forecast(
     min_fit_samples: int,
     floor: float | None = None,
     apply_time_bias: bool = True,
+    wind_extension_weeks: int = 1,
 ) -> dict:
     """Run the full pipeline at 15-min resolution.
 
@@ -338,8 +349,13 @@ def build_forecast(
     cons_q = bucket_records(consumption_forecast_records)
     cons_actual_q = expand_hourly_to_quarters(consumption_actual_records)
 
+    # Consumption keeps the single-week copy (strong weekly cycle); wind
+    # averages several weeks toward climatology (no weekly cycle) — see
+    # extend_with_last_week and the day-2/3 backtest.
     cons_q_extended = extend_with_last_week(cons_q, cons_actual_q, series_end)
-    wind_q_extended = extend_with_last_week(wind_q, wind_actual_q, series_end)
+    wind_q_extended = extend_with_last_week(
+        wind_q, wind_actual_q, series_end, weeks=wind_extension_weeks
+    )
 
     residual = {
         q: cons_q_extended[q] - wind_q_extended.get(q, 0.0) for q in cons_q_extended

@@ -33,6 +33,7 @@ from .const import (
     HISTORY_DAYS,
     MIN_FIT_SAMPLES,
     UPDATE_INTERVAL,
+    WIND_EXTENSION_WEEKS,
 )
 from .predictor import build_forecast, last_priced_quarter
 
@@ -211,6 +212,7 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
             default_intercept=DEFAULT_INTERCEPT,
             min_fit_samples=MIN_FIT_SAMPLES,
             floor=floor,
+            wind_extension_weeks=WIND_EXTENSION_WEEKS,
         )
         result["generated_at"] = datetime.now(timezone.utc).isoformat()
         _LOGGER.debug(
