@@ -300,6 +300,9 @@ class TestPredictionFloor(unittest.TestCase):
         self.nordpool_prices = _make_price_entries(self.series_start, 96, value=4.0)
 
     def _build(self, floor: float | None = None) -> dict:
+        # These tests exercise the raw linear + floor behaviour with fixed
+        # predicted values, so the additive hour-of-day bias is disabled (it is
+        # covered separately in TestHourBias).
         return build_forecast(
             nordpool_prices=self.nordpool_prices,
             wind_records=self.wind_forecast,
@@ -312,6 +315,7 @@ class TestPredictionFloor(unittest.TestCase):
             default_intercept=-2.0,
             min_fit_samples=24,
             floor=floor,
+            apply_time_bias=False,
         )
 
     def test_floor_none_leaves_predictions_unchanged(self) -> None:
@@ -359,6 +363,82 @@ class TestPredictionFloor(unittest.TestCase):
             "test setup is supposed to force fit_used_default=True",
         )
         self.assertGreater(result["prediction_floor_clipped_quarters"], 0)
+
+
+class TestHourBias(unittest.TestCase):
+    """The additive hour-of-day bias recovers a daily price rhythm that the
+    linear residual model cannot express.
+
+    Setup: flat residual (consumption 10000, wind 2000 -> residual 8000
+    everywhere) so the linear fit has zero residual variance and falls back to
+    the default coefficients, predicting a constant 14.0 for every quarter.
+    The published day-0 prices instead alternate by UTC hour: 5.0 on even hours,
+    15.0 on odd hours. With the bias on, the forecast must reproduce that
+    alternation; with it off, every quarter stays at the flat 14.0.
+    """
+
+    def setUp(self) -> None:
+        self.series_start = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
+        self.series_end = self.series_start + timedelta(days=4)
+        history_start = self.series_start - timedelta(days=8)
+
+        self.consumption_forecast = _make_quarter_records(
+            self.series_start, 4 * 96, value=10000.0
+        )
+        self.wind_forecast = _make_quarter_records(self.series_start, 4 * 96, value=2000.0)
+        self.consumption_actual_hourly = _make_hourly_records(
+            history_start, (8 + 4) * 24, value=10000.0
+        )
+        self.wind_actual = _make_quarter_records(
+            history_start, (8 + 4) * 96, value=2000.0
+        )
+        # Day-0 prices alternate by UTC hour: 5.0 (even), 15.0 (odd).
+        self.nordpool_prices = [
+            {
+                "start": (self.series_start + timedelta(minutes=15 * i))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "price": 5.0 if ((i // 4) % 2 == 0) else 15.0,
+            }
+            for i in range(96)
+        ]
+
+    def _build(self, apply_time_bias: bool) -> dict:
+        return build_forecast(
+            nordpool_prices=self.nordpool_prices,
+            wind_records=self.wind_forecast,
+            wind_actual_records=self.wind_actual,
+            consumption_forecast_records=self.consumption_forecast,
+            consumption_actual_records=self.consumption_actual_hourly,
+            series_start=self.series_start,
+            series_end=self.series_end,
+            default_slope=0.002,
+            default_intercept=-2.0,
+            min_fit_samples=24,
+            apply_time_bias=apply_time_bias,
+        )
+
+    def _day1_by_hour(self, result: dict) -> dict[int, float]:
+        out: dict[int, float] = {}
+        for p in result["series"]:
+            if p["start"].startswith("2026-05-09"):
+                hour = int(p["start"][11:13])
+                out[hour] = p["price"]
+        return out
+
+    def test_without_bias_forecast_is_flat(self) -> None:
+        result = self._build(apply_time_bias=False)
+        self.assertEqual(result["hour_bias_buckets"], 0)
+        day1 = self._day1_by_hour(result)
+        self.assertTrue(all(abs(v - 14.0) < 1e-9 for v in day1.values()))
+
+    def test_bias_reproduces_hourly_profile(self) -> None:
+        result = self._build(apply_time_bias=True)
+        self.assertEqual(result["hour_bias_buckets"], 24)
+        day1 = self._day1_by_hour(result)
+        for hour, price in day1.items():
+            expected = 5.0 if hour % 2 == 0 else 15.0
+            self.assertAlmostEqual(price, expected, places=2, msg=f"hour {hour}")
 
 
 if __name__ == "__main__":

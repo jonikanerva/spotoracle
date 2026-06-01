@@ -215,7 +215,7 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
         result["generated_at"] = datetime.now(timezone.utc).isoformat()
         _LOGGER.debug(
             "Fit: a=%.5f b=%.3f samples=%d default=%s cons_ext=%d wind_ext=%d "
-            "floor=%s clipped=%d",
+            "floor=%s clipped=%d hour_bias_buckets=%d",
             result["slope"],
             result["intercept"],
             result["fit_samples"],
@@ -224,5 +224,6 @@ class SpotOracleCoordinator(DataUpdateCoordinator[dict]):
             result["wind_extended_quarters"],
             result["prediction_floor"],
             result["prediction_floor_clipped_quarters"],
+            result["hour_bias_buckets"],
         )
         return result

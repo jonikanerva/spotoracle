@@ -9,3 +9,6 @@ __pycache__/
 
 # Fingrid Open Data OpenAPI spec — kept locally as developer reference
 avoindata-api.yaml
+
+# Backtest data — fetched with personal API keys; never committed
+tools/backtest_data/

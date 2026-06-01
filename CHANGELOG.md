@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-31
+
+### Added
+- **Hour-of-day bias correction.** The forecast now layers an additive
+  per-UTC-hour bias on top of the linear regression, learned from your source
+  sensor's own published prices (the mean of `actual − predicted` grouped by
+  hour). This recovers the daily price rhythm — morning/evening peaks, night
+  troughs — that the `consumption − wind` residual model alone cannot express.
+  Measured on April–May 2026 data, day-1 rank correlation (Spearman) improved
+  0.38 → 0.77, day-2 0.30 → 0.70, day-3 0.22 → 0.64, and mean absolute error
+  3.76 → 3.50 c/kWh; the forecast now beats the naive "same quarter yesterday /
+  last week" baselines on ranking. Toggle via `build_forecast(apply_time_bias=…)`
+  (defaults on).
+- **Backtest harness** under `tools/` — developer tooling, not shipped to Home
+  Assistant: rolling-origin evaluation with a look-ahead firewall, rank-first
+  metrics (Spearman, precision@N for the cheapest/most-expensive hours) reported
+  per forecast horizon, and naive baselines to beat. See `fetch_backtest_data.py`,
+  `backtest.py`, `metrics.py`, `vintage.py`, and `tests/test_backtest.py`.
+- `hour_bias_buckets` diagnostic in the `custom_components.spotoracle` debug log
+  (the number of hour buckets the bias was learned over).
+
+### Changed
+- README "Fees and transmission tariffs": a time-of-day fee pattern is now
+  largely captured by the hour-of-day bias correction rather than averaged away.
+
 ## [2.0.0] - 2026-05-31
 
 ### Changed
@@ -159,7 +184,8 @@ contract as stable.
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/jonikanerva/spotoracle/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/jonikanerva/spotoracle/compare/v0.7.2...v1.0.0
 [0.7.2]: https://github.com/jonikanerva/spotoracle/compare/v0.7.1...v0.7.2
