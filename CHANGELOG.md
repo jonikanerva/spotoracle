@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-01
+
+### Changed
+- **Multi-week wind tail extension.** Past Fingrid's ~72h wind forecast horizon,
+  the day-2/3 tail now averages the same weekday/quarter over the **last 4 weeks**
+  instead of copying a single week. Wind has no weekly cycle, so one week ago is
+  essentially noise; averaging pulls the estimate toward the local climatology.
+  Measured (Apr–May 2026): day-3 rank correlation (Spearman) 0.65 → 0.68,
+  P@8cheapest 0.61 → 0.64; day-1/2 unaffected. Consumption keeps the single-week
+  copy (its strong weekly cycle makes one week ago the best proxy). This
+  improves day-3 **ranking** (the cheap/expensive ordering automations use); the
+  absolute day-3 level shifts slightly, consistent with the ranking-first goal.
+- `HISTORY_DAYS` raised from 8 to 29 so the 4-week wind look-back has data. This
+  enlarges each Fingrid fetch but stays within one request (no pagination).
+- New knob `WIND_EXTENSION_WEEKS` (const) / `build_forecast(wind_extension_weeks=…)`;
+  `extend_with_last_week` gained a `weeks` parameter (default 1, backward-compatible).
+
 ## [2.1.1] - 2026-06-01
 
 ### Fixed
@@ -198,7 +215,8 @@ contract as stable.
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/jonikanerva/spotoracle/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/jonikanerva/spotoracle/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/jonikanerva/spotoracle/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jonikanerva/spotoracle/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jonikanerva/spotoracle/compare/v1.0.0...v2.0.0

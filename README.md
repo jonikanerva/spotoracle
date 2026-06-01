@@ -84,12 +84,12 @@ For ApexCharts, the correct visualization for 15-min prices is **stepline** (a s
 
 The forecast does **not** duplicate prices your source sensor already publishes. It begins one 15-min quarter after the **last** published price and runs a fixed **3 days = 288 quarters** forward — so the first predicted quarter is the start of the first day your source sensor does not yet cover (typically tomorrow, or the day after once tomorrow's day-ahead prices are published around 14:00–15:00 EET). The window length is constant regardless of how much your sensor covers.
 
-Fingrid's own forecast horizons are shorter than 3 days: the wind power forecast (245) extends ~72h and the consumption forecast (165) ~24h. The remaining quarters are filled from **last week's actuals** at the same weekday/quarter pair:
+Fingrid's own forecast horizons are shorter than 3 days: the wind power forecast (245) extends ~72h and the consumption forecast (165) ~24h. The remaining quarters are filled from **past actuals** at the same weekday/quarter pair:
 
-- **Consumption** (dataset 124, 15-min resolution) → when Fingrid's consumption forecast ends.
-- **Wind power** (dataset 75, 15 min) → when Fingrid's wind power forecast ends.
+- **Consumption** (dataset 124, 15-min resolution) → copied from **last week** when Fingrid's consumption forecast ends. The Finnish weekly demand cycle is strong, so one week ago is an accurate proxy.
+- **Wind power** (dataset 75, 15 min) → averaged over the **last 4 weeks** when Fingrid's wind forecast ends. Wind has no weekly cycle, so a single week is essentially noise; averaging several weeks pulls the estimate toward the local climatology and measurably improves the day-2/3 ranking.
 
-The Finnish electricity-consumption weekly cycle is strong, so consumption extrapolation is accurate. Wind power varies with weather, making the same hour one week ago a coarser proxy. When the window already starts after tomorrow's published prices, its later quarters lean entirely on this same-weekday-last-week extension — the same deliberate approximation the integration has always used for its multi-day tail, fine for automations.
+When the window already starts after tomorrow's published prices, its later quarters lean entirely on this same-weekday extension — a deliberate approximation, fine for the ranking (cheap/expensive) automations this integration targets. Absolute prices on day 3 are the least certain part of the forecast.
 
 The number of extrapolated quarters is written to the debug log (`cons_ext` / `wind_ext`) for `custom_components.spotoracle`.
 
