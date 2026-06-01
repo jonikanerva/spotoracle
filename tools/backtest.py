@@ -51,6 +51,7 @@ from const import (  # noqa: E402
     DEFAULT_SLOPE,
     FORECAST_DAYS,
     MIN_FIT_SAMPLES,
+    WIND_EXTENSION_WEEKS,
 )
 from predictor import (  # noqa: E402
     build_forecast,
@@ -474,6 +475,7 @@ def run(args: argparse.Namespace) -> dict:
                     default_intercept=DEFAULT_INTERCEPT,
                     min_fit_samples=MIN_FIT_SAMPLES,
                     floor=fv,
+                    wind_extension_weeks=WIND_EXTENSION_WEEKS,
                 )
                 buckets = score_series(result["series"], realized)
                 for h in HORIZONS:

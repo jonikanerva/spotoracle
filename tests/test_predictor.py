@@ -16,6 +16,7 @@ from predictor import (  # noqa: E402  (sys.path tweak above)
     bucket_records,
     build_forecast,
     expand_hourly_to_quarters,
+    extend_with_last_week,
     last_priced_quarter,
     parse_price_sensor_attributes,
     quarter_key,
@@ -147,6 +148,41 @@ class TestExpandToQuarters(unittest.TestCase):
         self.assertEqual(sorted(result.values()), [10.0, 20.0, 30.0, 40.0])
         k15 = quarter_key(datetime(2026, 5, 8, 0, 15, tzinfo=timezone.utc))
         self.assertEqual(result[k15], 20.0)
+
+
+class TestExtendWithLastWeek(unittest.TestCase):
+    def setUp(self) -> None:
+        self.base = datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc)
+        self.forecast = {quarter_key(self.base): 100.0}  # last known at base
+        self.target = self.base + timedelta(minutes=15)  # first extended quarter
+        self.horizon = self.base + timedelta(minutes=30)  # one quarter to fill
+
+    def test_single_week_default_copies_7d_back(self) -> None:
+        actual = {
+            quarter_key(self.target - timedelta(days=7)): 10.0,
+            quarter_key(self.target - timedelta(days=14)): 20.0,
+        }
+        out = extend_with_last_week(self.forecast, actual, self.horizon)
+        self.assertAlmostEqual(out[quarter_key(self.target)], 10.0)  # only 7d
+
+    def test_multi_week_averages(self) -> None:
+        actual = {
+            quarter_key(self.target - timedelta(days=7)): 10.0,
+            quarter_key(self.target - timedelta(days=14)): 20.0,
+            quarter_key(self.target - timedelta(days=21)): 30.0,
+        }
+        out = extend_with_last_week(self.forecast, actual, self.horizon, weeks=3)
+        self.assertAlmostEqual(out[quarter_key(self.target)], 20.0)  # mean(10,20,30)
+
+    def test_multi_week_skips_missing_weeks(self) -> None:
+        # Only the 7d look-back exists; weeks=4 must average what it has, not crash.
+        actual = {quarter_key(self.target - timedelta(days=7)): 12.0}
+        out = extend_with_last_week(self.forecast, actual, self.horizon, weeks=4)
+        self.assertAlmostEqual(out[quarter_key(self.target)], 12.0)
+
+    def test_no_history_leaves_quarter_unfilled(self) -> None:
+        out = extend_with_last_week(self.forecast, {}, self.horizon, weeks=4)
+        self.assertNotIn(quarter_key(self.target), out)
 
 
 class TestLastPricedQuarter(unittest.TestCase):

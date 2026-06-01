@@ -15,11 +15,17 @@ DATASET_WIND_ACTUAL = 75                # actual wind power, 15 min (used for la
 DATASET_CONSUMPTION_FORECAST = 165      # consumption forecast, 15 min, ~24h
 DATASET_CONSUMPTION_ACTUAL = 124        # actual consumption, 15-min since the 2025 MTU shift (used for last-week extension)
 
-HISTORY_DAYS = 8                        # how many days of history to fetch for last-week extension
+HISTORY_DAYS = 29                       # days of history to fetch: covers WIND_EXTENSION_WEEKS (+1 day margin)
 FORECAST_DAYS = 3                       # predicted series length: fixed N days after the last published
                                         # price (= 3 × 96 = 288 quarters), no published-price pass-through
 
 MIN_FIT_SAMPLES = 24             # quarters; 24 × 15 min = 6h minimum overlap
+
+# Tail extension past Fingrid's forecast horizons (same weekday/quarter, N weeks
+# back). Consumption stays at 1 (strong weekly cycle). Wind has no weekly cycle,
+# so it averages over more weeks toward climatology — measurably better on the
+# day-2/3 tail (see tools/backtest.py).
+WIND_EXTENSION_WEEKS = 4
 
 DEFAULT_SLOPE = 0.0020       # snt/kWh per MW residual
 DEFAULT_INTERCEPT = -2.0     # snt/kWh
